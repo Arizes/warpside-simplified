@@ -1,0 +1,17 @@
+{
+  "name": "warpside",
+  "version": "2.0.0",
+  "description": "Live PlanetSide 2 leaderboards for the PS4 servers, with a rolling 24-hour history",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  }
+}

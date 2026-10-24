@@ -1,0 +1,5 @@
+# LF everywhere so Prettier's check passes on Windows clones (core.autocrlf=true).
+* text=auto eol=lf
+*.png binary
+*.webp binary
+*.woff2 binary

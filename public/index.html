@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Warpside — PlanetSide 2 Live Leaderboards</title>
+  <meta name="description" content="Live PlanetSide 2 leaderboards for Genudine and Ceres: top players, top outfits and kills per hour over the last 24 hours.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <header class="top">
+    <a class="brand" href="/" aria-label="Warpside home">
+      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M16 2 29 9.5v13L16 30 3 22.5v-13z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11l3.5 10L16 13l3.5 8L23 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span>WARPSIDE</span>
+    </a>
+    <div class="controls">
+      <div class="seg" id="world" role="tablist" aria-label="Server"></div>
+      <div class="seg" id="window" role="tablist" aria-label="Time window">
+        <button role="tab" data-v="1h">1H</button>
+        <button role="tab" data-v="6h">6H</button>
+        <button role="tab" data-v="24h" aria-selected="true">24H</button>
+      </div>
+    </div>
+    <div class="pill" id="status"><i></i><span>Connecting…</span></div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow" id="server-line">PlanetSide 2 · PS4</p>
+        <h1>Live leaderboards</h1>
+        <p class="lede">Every kill on the PS4 servers, ranked in real time and remembered for 24 hours.</p>
+      </div>
+      <div class="tiles">
+        <div class="tile"><span class="k" id="t-kills">–</span><span class="l">Kills</span></div>
+        <div class="tile"><span class="k" id="t-players">–</span><span class="l">Active players</span></div>
+        <div class="tile"><span class="k" id="t-since">–</span><span class="l">Tracked for</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Faction kills</h2>
+      <div class="factions" id="factions"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Kills per hour <small id="hourly-note"></small></h2>
+      <div class="chart" id="chart"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Top players</h2>
+        <label class="search"><span class="sr">Filter players</span><input id="filter" type="search" placeholder="Filter by name or outfit" autocomplete="off" maxlength="32"></label>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th class="n">Kills</th><th class="n">Deaths</th><th class="n">KDR</th><th class="n">KPM</th><th>Top weapon</th></tr></thead>
+          <tbody id="players"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="players-empty" hidden>No kills recorded yet — the collector fills this in as the servers play.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Top outfits</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>Outfit</th><th class="n">Kills</th><th class="n">Deaths</th><th class="n">KDR</th><th class="n">Members</th><th>Top weapon</th></tr></thead>
+          <tbody id="outfits"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="outfits-empty" hidden>Outfits need at least two active members to rank.</p>
+    </section>
+  </main>
+
+  <dialog id="player" aria-labelledby="p-name">
+    <div class="dlg">
+      <button class="close" id="p-close" aria-label="Close">×</button>
+      <p class="eyebrow" id="p-outfit"></p>
+      <h2 id="p-name"></h2>
+      <div class="tiles small" id="p-tiles"></div>
+      <h3>Kills per hour</h3>
+      <div class="chart small" id="p-chart"></div>
+      <h3>Top weapons</h3>
+      <ul class="weapons" id="p-weapons"></ul>
+    </div>
+  </dialog>
+
+  <footer>
+    <p>Data from the Daybreak Census API and event stream. Warpside is a fan project, not affiliated with or endorsed by Daybreak Games. PlanetSide is a trademark of Daybreak Games Company LLC.</p>
+  </footer>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
