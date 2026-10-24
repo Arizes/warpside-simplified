@@ -1,12 +1,14 @@
-// Live continent map in the style of the in-game map: official terrain tiles, Census hex territories,
-// lattice, base icons, combat clouds and a region card. All text from the API is set with textContent.
+// Live continent map in the style of the in-game map: official terrain tiles, Census hex territories, an
+// influence cloud, the lattice, base icons, animated battle bubbles and a region card. All text from the API
+// is set with textContent.
 // Hex geometry adapted from Honu (https://github.com/varunda/honu, MIT, src/map/LedgerModels.ts).
+import { bounds, cutOffRegions, intensity, labelLines, puffRate } from './map-logic.js';
+
 const NS = 'http://www.w3.org/2000/svg';
 const HALF = 4096; // continents are 8,192 m square, centred on the origin
 const TILE_PX = 256;
 const LODS = [2, 3, 4]; // must match the levels fetched by `npm run assets`
 const HEX_W = 200; // hex width in metres (Honu: 50/8 map units, 32 m per unit)
-const HEX_C = HEX_W / Math.sqrt(3); // centre to corner
 const FNAME = { 0: 'Unowned', 1: 'Vanu Sovereignty', 2: 'New Conglomerate', 3: 'Terran Republic', 4: 'NS Operatives' };
 const FTAG = { 0: '—', 1: 'VS', 2: 'NC', 3: 'TR' };
 const TYPE = { 1: 'Facility', 2: 'Amp Station', 3: 'Bio Lab', 4: 'Tech Plant', 5: 'Large Outpost', 6: 'Small Outpost', 7: 'Warpgate', 8: 'Interlink Facility', 9: 'Construction Outpost', 10: 'Relic Outpost', 11: 'Containment Site', 12: 'Trident Relay', 13: 'Seapost', 14: 'Large Outpost', 15: 'Small Outpost', 16: 'Amp Station', 17: 'Construction Outpost' };
@@ -27,11 +29,17 @@ const GLYPH = {
 };
 const STROKED = new Set([7]);
 const DEFAULT_GLYPH = 'M0 -0.48L0.48 0L0 0.48L-0.48 0Z';
+// Names follow the in-game filter panel where there is an equivalent.
 const LAYERS = [
-  ['terrain', 'Terrain'], ['owner', 'Territory'], ['outline', 'Region borders'], ['grid', 'Hex grid'],
-  ['lattice', 'Lattice'], ['bases', 'Bases'], ['names', 'Names'], ['battles', 'Battles'], ['population', 'Players seen'],
+  ['terrain', 'Terrain'], ['bases', 'Facilities'], ['lattice', 'Facility connections'], ['owner', 'Territory control'],
+  ['battles', 'Hotspots'], ['cloud', 'Influence cloud'], ['grid', 'Grid'], ['outline', 'Region borders'],
+  ['names', 'Names'], ['population', 'Players seen'],
 ];
+// Influence cloud colours, close to the territory fills sampled from the in-game map.
+const CLOUD = { 1: '#9b2cf0', 2: '#1fa3f2', 3: '#ff1f3a' };
 const POLL_MS = 20000;
+const DETAIL_K = 0.13; // screen px per metre beyond which every base name is shown
+const MAX_PUFFS = 180;
 
 const svgEl = (tag, attrs = {}, parent = null) => {
   const n = document.createElementNS(NS, tag);
@@ -45,6 +53,7 @@ const minutes = (ms) => {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
 };
 const easeOut = (t) => 1 - (1 - t) ** 3;
+const clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 function load(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
 }
@@ -97,23 +106,22 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   const svg = $('map-svg');
   const box = $('map-box');
   const tip = $('map-tip');
-  const defs = svgEl('defs', {}, svg);
-  const cloud = svgEl('radialGradient', { id: 'm-cloud' }, defs);
-  svgEl('stop', { offset: '0', 'stop-color': '#ffe08a', 'stop-opacity': '0.95' }, cloud);
-  svgEl('stop', { offset: '0.35', 'stop-color': '#ff9a2e', 'stop-opacity': '0.7' }, cloud);
-  svgEl('stop', { offset: '0.7', 'stop-color': '#ff5a0a', 'stop-opacity': '0.25' }, cloud);
-  svgEl('stop', { offset: '1', 'stop-color': '#ff3d00', 'stop-opacity': '0' }, cloud);
+  const fxCanvas = $('map-fx');
+  const fx = fxCanvas.getContext('2d');
   const layer = {};
-  for (const id of ['tiles', 'regions', 'grid', 'borders', 'selected', 'lattice', 'clouds', 'bases', 'labels']) layer[id] = svgEl('g', { class: `m-${id}` }, svg);
+  for (const id of ['tiles', 'fog', 'regions', 'cloud', 'grid', 'borders', 'selected', 'lattice', 'bases', 'labels']) layer[id] = svgEl('g', { class: `m-${id}` }, svg);
+  const cloudImg = svgEl('image', { x: -HALF, y: -HALF, width: 2 * HALF, height: 2 * HALF, preserveAspectRatio: 'none' }, layer.cloud);
 
   const sounds = createSounds();
-  const layers = { ...Object.fromEntries(LAYERS.map(([k]) => [k, k !== 'grid'])), ...load('mapLayers', {}) };
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const layers = { ...Object.fromEntries(LAYERS.map(([k]) => [k, true])), ...load('mapLayers', {}) };
   const geoCache = {}; // `${world}:${zone}` -> prepared geometry
   const tiles = new Map(); // key -> <image>
   let zone = null;
   let geo = null;
   let live = null;
   let prevOwners = {};
+  let cutOff = new Set();
   let selected = null; // region id
   let vb = [-HALF, -HALF, 2 * HALF, 2 * HALF];
   let anim = 0;
@@ -122,6 +130,8 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   let active = false;
   let tilesMissing = false;
   let dataError = false;
+  let marks = []; // [{ g, x, y }] marker groups drawn in screen pixels, re-scaled on every view change
+  let cloudKey = '';
 
   function setStatus() {
     const msg = dataError
@@ -173,6 +183,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       occupied.set(`${x},${y}`, rid);
     }
     const regions = {};
+    const centres = [];
     let grid = '';
     const f1 = (v) => v.toFixed(1);
     for (const [rid, hs] of Object.entries(byRegion)) {
@@ -182,6 +193,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       let sy = 0;
       for (const [x, y] of hs) {
         const [cx, cy] = centre(x, y);
+        centres.push([cx, cy]);
         sx += cx;
         sy += cy;
         const v = [0, 1, 2, 3, 4, 5].map((i) => vertex(cx, cy, i));
@@ -201,11 +213,13 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     }
     const byFac = {};
     for (const [rid, r] of Object.entries(regions)) if (r.fac) byFac[r.fac] = rid;
-    return { regions, byFac, links: raw.links, grid };
+    return { regions, byFac, links: raw.links, grid, box: bounds(centres, w) || [-HALF, -HALF, HALF, HALF] };
   }
 
   function buildStatic() {
-    for (const g of ['regions', 'grid', 'borders', 'selected']) layer[g].replaceChildren();
+    for (const g of ['fog', 'regions', 'grid', 'borders', 'selected']) layer[g].replaceChildren();
+    // Outside the playable hexes the in-game map sinks into a dark teal haze: a big rectangle minus every hex.
+    svgEl('path', { d: `M${-2 * HALF} ${-2 * HALF}H${2 * HALF}V${2 * HALF}H${-2 * HALF}Z${geo.grid}`, 'fill-rule': 'evenodd', class: 'm-fogpath' }, layer.fog);
     for (const [rid, r] of Object.entries(geo.regions)) {
       const p = svgEl('path', { d: r.d, 'data-rid': rid, class: 'm-region o0' }, layer.regions);
       p.addEventListener('pointermove', (e) => showTip(e, rid));
@@ -213,20 +227,26 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       svgEl('path', { d: r.border, class: 'm-border' }, layer.borders);
     }
     svgEl('path', { d: geo.grid, class: 'm-gridline' }, layer.grid);
+    cloudKey = '';
   }
 
   /* ---------- view: tiles, zoom, smooth animation ---------- */
-  const scale = () => {
-    const b = svg.getBoundingClientRect();
-    return Math.min(b.width / vb[2], b.height / vb[3]) || 0.1; // screen px per map metre
-  };
+  // Box size is cached (updated by a ResizeObserver) so animation frames never force a layout to measure it.
+  let size = { w: svg.clientWidth || 1, h: svg.clientHeight || 1 };
+  const aspect = () => size.h / Math.max(1, size.w) || 1;
+  const scale = () => Math.min(size.w / vb[2], size.h / vb[3]) || 0.1; // screen px per map metre
   function clamp(v) {
     const out = [...v];
-    out[2] = Math.min(2 * HALF * 1.15, Math.max(450, out[2]));
-    out[3] = out[2] * (svg.clientHeight / Math.max(1, svg.clientWidth) || 1);
+    const a = aspect();
+    // wide boxes need a wider view box to show the whole continent top to bottom
+    out[2] = Math.min(2 * HALF * 1.15 * Math.max(1, 1 / a), Math.max(450, out[2]));
+    out[3] = out[2] * a;
     const pad = HALF * 0.15;
-    out[0] = Math.min(HALF + pad - out[2], Math.max(-HALF - pad, out[0]));
-    out[1] = Math.min(HALF + pad - out[3], Math.max(-HALF - pad, out[1]));
+    for (const [i, span] of [[0, out[2]], [1, out[3]]]) {
+      const lo = -HALF - pad;
+      const hi = HALF + pad - span;
+      out[i] = hi < lo ? -span / 2 : Math.min(hi, Math.max(lo, out[i]));
+    }
     return out;
   }
   function render() {
@@ -234,35 +254,47 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
       drawTiles();
-      drawOverlays();
+      placeMarkers();
     });
   }
   function setView(v) {
     cancelAnimationFrame(anim);
+    anim = 0;
     vb = clamp(v);
     render();
   }
   /** Eases the view box to a target, like the in-game map's zoom. */
-  function animateTo(target, ms = 280) {
+  function animateTo(goal, ms = 280) {
     cancelAnimationFrame(anim);
     const from = [...vb];
-    const to = clamp(target);
+    const to = clamp(goal);
     const start = performance.now();
     const step = (t) => {
       const p = Math.min(1, (t - start) / ms);
       const e = easeOut(p);
       vb = from.map((v, i) => v + (to[i] - v) * e);
       svg.setAttribute('viewBox', vb.map((v) => v.toFixed(1)).join(' '));
-      drawOverlays();
+      placeMarkers();
+      tilesSoon(t);
       if (p < 1) anim = requestAnimationFrame(step);
-      else render();
+      else {
+        anim = 0;
+        render();
+      }
     };
     anim = requestAnimationFrame(step);
+  }
+  let lastTiles = 0;
+  /** Loads newly exposed terrain during long animations, at most every 120 ms. */
+  function tilesSoon(now) {
+    if (now - lastTiles < 120) return;
+    lastTiles = now;
+    drawTiles();
   }
   let target = null; // where wheel zooming is heading, so fast scrolling stays smooth
   function zoomAt(factor, cx, cy, smooth = true) {
     const base = target && anim ? target : vb;
-    const nw = Math.min(2 * HALF * 1.15, Math.max(450, base[2] * factor));
+    const nw = clamp([0, 0, base[2] * factor, 0])[2];
     const f = nw / base[2];
     if (Math.abs(f - 1) < 1e-3) return;
     sounds.play(f < 1 ? 'in' : 'out');
@@ -270,17 +302,28 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     if (smooth) animateTo(target, 220);
     else setView(target);
   }
-  const fit = (smooth = false) => (smooth ? animateTo([-HALF, -HALF, 2 * HALF, 2 * HALF]) : setView([-HALF, -HALF, 2 * HALF, 2 * HALF]));
-  const toMap = (clientX, clientY) => {
-    const b = svg.getBoundingClientRect();
+  /** The whole continent, filling the box like the in-game overview. */
+  function fitBox() {
+    const [x0, y0, x1, y1] = geo?.box || [-HALF, -HALF, HALF, HALF];
+    const a = aspect();
+    const w = Math.max(x1 - x0, (y1 - y0) / a) * 1.16;
+    // nudged up a little so the header bar does not cover the northern bases
+    return [(x0 + x1) / 2 - w / 2, (y0 + y1) / 2 - w * a * 0.54, w, w * a];
+  }
+  const fit = (smooth = false) => (smooth ? animateTo(fitBox()) : setView(fitBox()));
+  /** Map metres to box pixels, honouring the SVG's centred "meet" letterboxing. */
+  function viewport() {
     const k = scale();
-    const ox = (b.width - vb[2] * k) / 2;
-    const oy = (b.height - vb[3] * k) / 2;
+    return { k, ox: (size.w - vb[2] * k) / 2, oy: (size.h - vb[3] * k) / 2 };
+  }
+  const toMap = (clientX, clientY) => {
+    const b = svg.getBoundingClientRect(); // input events only, so the page offset is always current
+    const { k, ox, oy } = viewport();
     return [vb[0] + (clientX - b.left - ox) / k, vb[1] + (clientY - b.top - oy) / k];
   };
   function focus(pos, width = 1600) {
     sounds.play(width < vb[2] ? 'in' : 'out');
-    animateTo([pos[0] - width / 2, pos[1] - width / 2, width, width], 420);
+    animateTo([pos[0] - width / 2, pos[1] - (width * aspect()) / 2, width, width * aspect()], 420);
   }
 
   function drawTiles() {
@@ -324,15 +367,16 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     tiles.clear();
   }
 
-  /* ---------- live overlays ---------- */
+  /* ---------- territory and influence cloud ---------- */
   const ownerOf = (rid) => live?.owners?.[rid] ?? 0;
   const fightAt = (fac) => (live?.fights || []).find((f) => f.fac === fac);
 
   function paintRegions() {
+    cutOff = geo ? cutOffRegions(geo.regions, geo.links, live?.owners || {}) : new Set();
     for (const p of layer.regions.children) {
       const rid = p.dataset.rid;
       const o = ownerOf(rid);
-      p.setAttribute('class', `m-region o${o >= 1 && o <= 4 ? o : 0}`);
+      p.setAttribute('class', `m-region o${o >= 1 && o <= 4 ? o : 0}${cutOff.has(rid) ? ' cut' : ''}${rid === selected ? ' sel' : ''}`);
       // a territory change since the last update briefly flashes, like a capture on the in-game map
       if (prevOwners[rid] !== undefined && prevOwners[rid] !== o) {
         p.classList.add('flash');
@@ -340,45 +384,69 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       }
     }
     prevOwners = { ...(live?.owners || {}) };
+    paintCloud();
   }
 
-  function drawOverlays() {
+  /**
+   * The influence cloud: territory colours blurred into a soft glow that bleeds across faction borders and
+   * out past the continent edge. Rendered once per ownership change into a small bitmap, so panning and
+   * zooming only scale an image (CSP allows data: images).
+   */
+  function paintCloud() {
     if (!geo) return;
-    const k = scale();
-    const px = (n) => n / k; // screen pixels to metres, so markers keep their size while zooming
-    const detail = k > 0.13; // zoomed in far enough for every base name
-    for (const g of ['lattice', 'clouds', 'bases', 'labels']) layer[g].replaceChildren();
-
-    if (layers.lattice) {
-      for (const [fa, fb] of geo.links) {
-        const ra = geo.byFac[fa];
-        const rb = geo.byFac[fb];
-        if (!ra || !rb) continue;
-        const a = geo.regions[ra].pos;
-        const b = geo.regions[rb].pos;
-        const oa = ownerOf(ra);
-        const ob = ownerOf(rb);
-        const owned = (o) => o >= 1 && o <= 3;
-        // a front line is a link between two different empires; links touching locked or unowned land stay grey
-        const cls = owned(oa) && oa === ob ? `l${oa}` : owned(oa) && owned(ob) ? 'front' : 'l0';
-        svgEl('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: `m-link ${cls}` }, layer.lattice);
-      }
+    const key = Object.keys(geo.regions).map((rid) => `${ownerOf(rid)}${cutOff.has(rid) ? 'c' : ''}`).join('');
+    if (key === cloudKey) return;
+    cloudKey = key;
+    const N = 320;
+    const ext = HALF * 1.2; // room for the glow beyond the hexes
+    const canvas = (n) => Object.assign(document.createElement('canvas'), { width: n, height: n });
+    const src = canvas(N);
+    const c = src.getContext('2d');
+    c.setTransform(N / (2 * ext), 0, 0, N / (2 * ext), N / 2, N / 2);
+    for (const [rid, r] of Object.entries(geo.regions)) {
+      const o = ownerOf(rid);
+      if (!CLOUD[o]) continue;
+      c.globalAlpha = cutOff.has(rid) ? 0.35 : 1;
+      c.fillStyle = CLOUD[o];
+      c.fill((r.path ||= new Path2D(r.d)));
     }
+    const out = canvas(N);
+    const o = out.getContext('2d');
+    if (typeof o.filter === 'string') {
+      o.filter = 'blur(9px)';
+      o.drawImage(src, 0, 0);
+    } else {
+      // no canvas filters (older Safari): averaging down and smoothing back up is a cheap blur
+      const small = canvas(40);
+      const s = small.getContext('2d');
+      s.imageSmoothingQuality = 'high';
+      s.drawImage(src, 0, 0, 40, 40);
+      o.imageSmoothingQuality = 'high';
+      o.drawImage(small, 0, 0, N, N);
+    }
+    for (const [a, v] of [['x', -ext], ['y', -ext], ['width', 2 * ext], ['height', 2 * ext]]) cloudImg.setAttribute(a, v);
+    cloudImg.setAttribute('href', out.toDataURL('image/png'));
+  }
 
-    const fights = live?.fights || [];
-    if (layers.battles) {
-      const maxHeat = Math.max(1, ...fights.map((f) => f.heat));
-      for (const f of fights) {
-        const rid = geo.byFac[f.fac];
-        if (!rid) continue;
-        const [x, y] = geo.regions[rid].pos;
-        const v = Math.sqrt(f.heat / maxHeat);
-        const g = svgEl('g', { class: 'm-fight', transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})` }, layer.clouds);
-        // a combat cloud sized in metres, so it reads as an area on the map like the in-game hotspots
-        svgEl('circle', { r: 160 + 340 * v, fill: 'url(#m-cloud)', class: 'm-cloud' }, g);
-        svgEl('circle', { r: 90 + 180 * v, fill: 'url(#m-cloud)', class: 'm-cloud core', cx: 40 * v, cy: -30 * v }, g);
-        for (const cls of ['m-pulse', 'm-pulse late']) svgEl('circle', { r: px(16 + 8 * v), class: cls }, g);
-      }
+  /* ---------- markers: built per data change, re-scaled per frame ---------- */
+  function buildMarkers() {
+    for (const g of ['lattice', 'bases', 'labels']) layer[g].replaceChildren();
+    marks = [];
+    if (!geo) return;
+    const owned = (o) => o >= 1 && o <= 3;
+    for (const [fa, fb] of geo.links) {
+      const ra = geo.byFac[fa];
+      const rb = geo.byFac[fb];
+      if (!ra || !rb) continue;
+      const [ax, ay] = geo.regions[ra].pos;
+      const [bx, by] = geo.regions[rb].pos;
+      const oa = ownerOf(ra);
+      const ob = ownerOf(rb);
+      // a front line is a link between two different empires; links touching locked or unowned land stay grey
+      const cls = owned(oa) && oa === ob ? `l${oa}` : owned(oa) && owned(ob) ? 'front' : 'l0';
+      const attrs = { x1: ax.toFixed(1), y1: ay.toFixed(1), x2: bx.toFixed(1), y2: by.toFixed(1) };
+      if (cls !== 'front' && cls !== 'l0') svgEl('line', { ...attrs, class: `m-link glow ${cls}` }, layer.lattice);
+      svgEl('line', { ...attrs, class: `m-link ${cls}` }, layer.lattice);
     }
 
     for (const [rid, r] of Object.entries(geo.regions)) {
@@ -386,60 +454,175 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       const major = MAJOR.has(r.t);
       const [x, y] = r.pos;
       const o = ownerOf(rid);
-      const fight = layers.battles ? fightAt(r.fac) : null;
-      if (layers.bases) {
-        const s = px(major ? 11 : 7.5) * (detail ? 1.1 : 1);
-        const g = svgEl('g', { class: `m-base o${o}${fight ? ' hot' : ''}${rid === selected ? ' sel' : ''}`, transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})` }, layer.bases);
-        svgEl('circle', { r: s, class: 'badge' }, g);
-        const glyph = GLYPH[r.t] || DEFAULT_GLYPH;
-        svgEl('path', { d: glyph, class: STROKED.has(r.t) ? 'glyph stroked' : 'glyph', transform: `scale(${s.toFixed(2)})` }, g);
-        if (fight) {
-          // ring split by how much each empire is involved
-          const total = f3(fight.factions);
-          const rr = s + px(4);
-          const circ = 2 * Math.PI * rr;
-          let offset = 0;
-          for (const fac of [1, 2, 3]) {
-            const share = total ? (fight.factions[fac] || 0) / total : 0;
-            if (!share) continue;
-            svgEl('circle', { r: rr, class: `m-ring l${fac}`, 'stroke-width': px(3), 'stroke-dasharray': `${(share * circ).toFixed(2)} ${circ.toFixed(2)}`, 'stroke-dashoffset': (-offset).toFixed(2), transform: 'rotate(-90)' }, g);
-            offset += share * circ;
-          }
-        }
-      }
-      const showName = layers.names && (major || detail || rid === selected);
-      if (showName) {
-        const t = svgEl('text', { x, y: y + px(major ? 25 : 19), class: major ? 'm-label major' : 'm-label', 'font-size': px(major ? 13 : 11.5), 'stroke-width': px(3.2) }, layer.labels);
-        t.textContent = r.n;
-      }
-      if (layers.population && fight?.seenTotal) {
-        const ty = y - px(major ? 22 : 17);
+      const fight = fightAt(r.fac);
+      const s = major ? 10.5 : 7;
+      const g = svgEl('g', { class: `m-base o${o}${rid === selected ? ' sel' : ''}${cutOff.has(rid) ? ' cut' : ''}` }, layer.bases);
+      if (major) svgEl('circle', { r: s + 3.5, class: 'halo' }, g);
+      svgEl('circle', { r: s, class: 'badge' }, g);
+      svgEl('path', { d: GLYPH[r.t] || DEFAULT_GLYPH, class: STROKED.has(r.t) ? 'glyph stroked' : 'glyph', transform: `scale(${s * 0.92})` }, g);
+      marks.push({ g, x, y });
+
+      const lg = svgEl('g', { class: `m-name${major ? ' major' : ' minor'}${rid === selected ? ' sel' : ''}` }, layer.labels);
+      const lines = labelLines(r.n, r.t);
+      const size = major ? 13.5 : 11.5;
+      lines.forEach((line, i) => {
+        const t = svgEl('text', { y: s + 4 + size * (i + 0.85), class: 'm-label', 'font-size': size }, lg);
+        t.textContent = line;
+      });
+      if (fight?.seenTotal) {
         const label = `${fight.seenTotal}+ seen`; // a floor, not a range: the real number is unknown
-        const w = px(label.length * 6.3 + 10);
-        svgEl('rect', { x: x - w / 2, y: ty - px(9), width: w, height: px(15), rx: px(2), class: 'm-pop' }, layer.labels);
-        const t = svgEl('text', { x, y: ty + px(2.5), class: 'm-pop-text', 'font-size': px(10.5) }, layer.labels);
+        const w = label.length * 6.3 + 10;
+        const pop = svgEl('g', { class: 'm-popg', transform: `translate(0 ${-(s + 14)})` }, lg);
+        svgEl('rect', { x: -w / 2, y: -8, width: w, height: 15, rx: 2, class: 'm-pop' }, pop);
+        const t = svgEl('text', { y: 3.5, class: 'm-pop-text', 'font-size': 10.5 }, pop);
         t.textContent = label;
       }
+      marks.push({ g: lg, x, y });
+    }
+    placeMarkers();
+  }
+
+  /** Keeps markers a constant size on screen: one transform per marker instead of rebuilding the DOM. */
+  function placeMarkers() {
+    if (!geo) return;
+    const k = scale();
+    const u = (1 / k).toFixed(3);
+    for (const m of marks) m.g.setAttribute('transform', `translate(${m.x.toFixed(1)} ${m.y.toFixed(1)}) scale(${u})`);
+    svg.classList.toggle('detail', k > DETAIL_K);
+    if (!fxRaf) drawFx(performance.now());
+  }
+
+  /* ---------- battle bubbles ---------- */
+  // Each fight spawns short-lived orange puffs around its base, like the in-game hotspots. The spawn rate
+  // follows the server's measured heat at that base; positions inside the bubble are decorative because
+  // Daybreak publishes only which continent a kill happened on (fights are placed at bases, see README).
+  let puffs = [];
+  let emitters = {};
+  let fxRaf = 0;
+  let fxLast = 0;
+  let fxSize = [0, 0, 1];
+
+  function sizeFx() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (fxSize[0] === size.w && fxSize[1] === size.h && fxSize[2] === dpr) return;
+    fxSize = [size.w, size.h, dpr];
+    fxCanvas.width = Math.round(size.w * dpr);
+    fxCanvas.height = Math.round(size.h * dpr);
+  }
+  const fightsShown = () => (layers.battles && geo && live?.fights?.length ? live.fights.filter((f) => geo.byFac[f.fac]) : []);
+  const animating = () => active && !document.hidden && !reduceMotion.matches && fightsShown().length > 0;
+  function kickFx() {
+    if (fxRaf) return;
+    if (animating()) {
+      fxLast = performance.now();
+      fxRaf = requestAnimationFrame(fxFrame);
+    } else {
+      drawFx(performance.now());
     }
   }
-  const f3 = (f) => (f[1] || 0) + (f[2] || 0) + (f[3] || 0);
+  function fxFrame(now) {
+    fxRaf = 0;
+    const dt = Math.min(100, now - fxLast);
+    fxLast = now;
+    spawn(dt, now);
+    drawFx(now);
+    if (animating()) fxRaf = requestAnimationFrame(fxFrame);
+  }
+  function spawn(dt, now) {
+    for (const f of fightsShown()) {
+      const e = (emitters[f.fac] ||= { acc: Math.random() });
+      e.acc += (puffRate(f.heat) * dt) / 1000;
+      const v = intensity(f.heat);
+      const [bx, by] = geo.regions[geo.byFac[f.fac]].pos;
+      const spread = 170 + 170 * v;
+      while (e.acc >= 1 && puffs.length < MAX_PUFFS) {
+        e.acc -= 1;
+        const a = Math.random() * Math.PI * 2;
+        const d = spread * Math.sqrt(Math.random());
+        puffs.push({ x: bx + Math.cos(a) * d, y: by + Math.sin(a) * d, born: now, life: 650 + Math.random() * 550, size: 110 + Math.random() * 70 + 50 * v });
+      }
+      if (e.acc >= 1) e.acc = 0; // at the cap: drop the backlog instead of bursting later
+    }
+  }
+  function puffAt(sx, sy, r, alpha) {
+    const g = fx.createRadialGradient(sx, sy, 0, sx, sy, r);
+    g.addColorStop(0, `rgba(255, 232, 150, ${alpha})`);
+    g.addColorStop(0.35, `rgba(255, 170, 50, ${alpha})`);
+    g.addColorStop(0.7, `rgba(255, 120, 18, ${alpha * 0.75})`);
+    g.addColorStop(1, 'rgba(255, 90, 0, 0)');
+    fx.fillStyle = g;
+    fx.beginPath();
+    fx.arc(sx, sy, r, 0, Math.PI * 2);
+    fx.fill();
+  }
+  function drawFx(now) {
+    sizeFx();
+    const dpr = fxSize[2];
+    fx.setTransform(1, 0, 0, 1, 0, 0);
+    fx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+    const shown = fightsShown();
+    if (!shown.length) {
+      puffs = [];
+      return;
+    }
+    fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const { k, ox, oy } = viewport();
+    const sx = (x) => (x - vb[0]) * k + ox;
+    const sy = (y) => (y - vb[1]) * k + oy;
+    // a faint standing haze, so a fight stays visible between puffs and with reduced motion
+    for (const f of shown) {
+      const v = intensity(f.heat);
+      const [x, y] = geo.regions[geo.byFac[f.fac]].pos;
+      const r = clampN((280 + 260 * v) * k, 22, 170);
+      const g = fx.createRadialGradient(sx(x), sy(y), 0, sx(x), sy(y), r);
+      g.addColorStop(0, `rgba(255, 140, 40, ${0.22 + 0.2 * v})`);
+      g.addColorStop(1, 'rgba(255, 90, 0, 0)');
+      fx.fillStyle = g;
+      fx.beginPath();
+      fx.arc(sx(x), sy(y), r, 0, Math.PI * 2);
+      fx.fill();
+      if (reduceMotion.matches) puffAt(sx(x), sy(y), clampN(90 * k, 6, 22), 0.85);
+    }
+    const alive = [];
+    for (const p of puffs) {
+      const t = (now - p.born) / p.life;
+      if (t >= 1) continue;
+      alive.push(p);
+      const base = clampN(p.size * k, 7, 30);
+      const r = base * (0.45 + 0.55 * easeOut(Math.min(1, t / 0.22)));
+      const a = t < 0.3 ? 1 : Math.max(0, 1 - (t - 0.3) / 0.45);
+      const px = sx(p.x);
+      const py = sy(p.y);
+      if (a > 0) puffAt(px, py, r, a);
+      if (t > 0.3) {
+        // the puff collapses into a thin expanding ring as it fades, as in the game
+        fx.strokeStyle = `rgba(255, 170, 70, ${(1 - t) * 0.75})`;
+        fx.lineWidth = 1.4;
+        fx.beginPath();
+        fx.arc(px, py, r * (1 + (t - 0.3) * 1.3), 0, Math.PI * 2);
+        fx.stroke();
+      }
+    }
+    puffs = alive;
+  }
 
   /* ---------- selection and region card ---------- */
   function select(rid, { fly = false } = {}) {
-    selected = rid;
+    selected = rid && geo?.regions[rid] ? rid : null;
     layer.selected.replaceChildren();
-    if (!rid || !geo?.regions[rid]) {
-      selected = null;
+    for (const p of layer.regions.children) p.classList.toggle('sel', p.dataset.rid === selected);
+    if (!selected) {
       $('map-card').hidden = true;
-      drawOverlays();
+      buildMarkers();
       return;
     }
-    const r = geo.regions[rid];
+    const r = geo.regions[selected];
+    svgEl('path', { d: r.d, class: 'm-select-fill' }, layer.selected);
     svgEl('path', { d: r.border, class: 'm-select-glow' }, layer.selected);
     svgEl('path', { d: r.border, class: 'm-select' }, layer.selected);
     if (fly) focus(r.pos, Math.min(vb[2], 2400));
     renderCard();
-    drawOverlays();
+    buildMarkers();
   }
   function renderCard() {
     const card = $('map-card');
@@ -452,11 +635,13 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     const fight = fightAt(r.fac);
     const held = live.held?.[r.fac];
     const rows = [];
+    rows.push(el('p', { class: 'rc-tab', text: 'Region' }));
     rows.push(el('div', { class: 'rc-head' },
       el('div', {}, el('p', { class: 'eyebrow', text: TYPE[r.t] || 'Facility' }), el('h3', { text: r.n || 'Territory' })),
       el('button', { type: 'button', class: 'close', 'aria-label': 'Close region details', id: 'map-card-close', text: '×' })));
     rows.push(el('div', { class: 'rc-owner' }, o >= 1 && o <= 3 ? emblem(o, 26) : null,
       el('div', {}, el('span', { class: 'rc-label', text: 'Controlled by' }), el('b', { class: `c${o}`, text: o ? FNAME[o] || 'Unknown' : 'Nobody (unowned or locked)' }))));
+    if (cutOff.has(selected)) rows.push(el('p', { class: 'rc-line rc-cut', text: 'Cut off: not connected to its empire’s warpgate by the lattice.' }));
     if (held && held.f === o && o) {
       const tag = held.outfit?.tag ? `[${held.outfit.tag}] ` : '';
       const name = held.outfit ? `${tag}${held.outfit.name || 'outfit name loading…'}` : 'no outfit recorded';
@@ -504,7 +689,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     if (!r) return;
     const o = ownerOf(rid);
     const fight = fightAt(r.fac);
-    const lines = [el('b', { text: r.n || 'Territory' }), el('span', { class: `c${o}`, text: `${TYPE[r.t] || 'Facility'} · ${o ? FTAG[o] : 'Unowned'}` })];
+    const lines = [el('b', { text: r.n || 'Territory' }), el('span', { class: `c${o}`, text: `${TYPE[r.t] || 'Facility'} · ${o ? FTAG[o] : 'Unowned'}${cutOff.has(rid) ? ' · cut off' : ''}` })];
     if (fight) lines.push(el('span', { class: 'm-tip-fight', text: `Combat · ${fight.seenTotal}+ players seen` }));
     tip.replaceChildren(...lines);
     tip.hidden = false;
@@ -532,10 +717,16 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     const z = live.zones.find((x) => x.id === zone);
     const t = z?.territory || {};
     const total = [0, 1, 2, 3].reduce((a, f) => a + (t[f] || 0), 0);
-    $('map-hud').replaceChildren(
-      el('h2', { text: z?.name || 'Map' }),
-      el('div', { class: 'hud-terr' }, el('span', { class: 'rc-label', text: 'Territory' }),
-        ...[1, 2, 3].map((f) => el('span', { class: 'hud-f' }, emblem(f, 18), el('b', { class: `c${f}`, text: total ? `${Math.round(((t[f] || 0) / total) * 100)}%` : '–' })))));
+    const pct = (f) => (total ? Math.round(((t[f] || 0) / total) * 100) : 0);
+    // the in-game header: continent name over a territory bar with each empire's share written inside
+    const hbar = el('div', { class: 'hud-bar', role: 'img', 'aria-label': [1, 2, 3].map((f) => `${FTAG[f]} ${pct(f)}%`).join(', ') });
+    for (const f of [1, 2, 3, 0]) {
+      if (!t[f]) continue;
+      const seg = el('div', { class: `t${f}` }, f ? el('span', { text: `${pct(f)}%` }) : null);
+      seg.style.flexGrow = String(t[f]);
+      hbar.append(seg);
+    }
+    $('map-hud').replaceChildren(el('h2', { text: z?.name || 'Map' }), total ? hbar : el('p', { class: 'rc-label', text: 'Territory unknown' }));
   }
   function renderSide() {
     $('map-zones').replaceChildren(...live.zones.map((z) => {
@@ -582,6 +773,11 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       return el('label', { class: 'filter', for: `layer-${key}` }, input, el('span', { text: label }));
     }));
     const toggle = $('map-filters-toggle');
+    // on a phone the open panel would cover most of the map, so it starts folded
+    if (window.matchMedia('(max-width: 640px)').matches) {
+      toggle.setAttribute('aria-expanded', 'false');
+      $('map-filters-list').hidden = true;
+    }
     toggle.addEventListener('click', () => {
       const open = toggle.getAttribute('aria-expanded') !== 'true';
       toggle.setAttribute('aria-expanded', String(open));
@@ -592,7 +788,8 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     for (const [key] of LAYERS) svg.classList.toggle(`no-${key}`, !layers[key]);
     if (layers.terrain) drawTiles();
     else clearTiles();
-    drawOverlays();
+    placeMarkers();
+    kickFx();
   }
 
   /* ---------- data ---------- */
@@ -616,10 +813,14 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
         fit();
       }
       paintRegions();
-      drawOverlays();
+      buildMarkers();
       renderHud();
       renderSide();
       if (selected) renderCard();
+      // emitters for fights that ended are dropped; their last puffs finish on their own
+      const ongoing = new Set(live.fights.map((f) => f.fac));
+      for (const fac of Object.keys(emitters)) if (!ongoing.has(fac)) delete emitters[fac];
+      kickFx();
       dataError = false;
     } catch {
       dataError = true;
@@ -632,9 +833,13 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     zone = z;
     geo = null;
     live = null;
+    puffs = [];
+    emitters = {};
     select(null);
     clearTiles();
-    for (const g of ['regions', 'grid', 'borders', 'selected', 'lattice', 'clouds', 'bases', 'labels']) layer[g].replaceChildren();
+    for (const g of ['fog', 'regions', 'grid', 'borders', 'selected', 'lattice', 'bases', 'labels']) layer[g].replaceChildren();
+    cloudImg.removeAttribute('href');
+    cloudKey = '';
     await poll();
   }
 
@@ -642,22 +847,29 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
     const [x, y] = toMap(e.clientX, e.clientY);
-    zoomAt(e.deltaY > 0 ? 1.3 : 1 / 1.3, x, y);
+    // trackpads send many small deltas: scale by the delta so a pinch-scroll feels continuous.
+    // Firefox reports mouse wheels in lines (deltaMode 1), roughly 33 px each.
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    const step = clampN(Math.abs(dy) / 100, 0.15, 1.5);
+    zoomAt((dy > 0 ? 1.3 : 1 / 1.3) ** step, x, y);
   }, { passive: false });
   const pointers = new Map();
   let pinch = 0;
   let moved = 0;
+  let fling = null; // [vx, vy] in metres per ms, for a short glide after a drag
   svg.addEventListener('pointerdown', (e) => {
     svg.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY, e.timeStamp]);
     moved = 0;
+    fling = null;
     cancelAnimationFrame(anim);
+    anim = 0;
     target = null;
   });
   svg.addEventListener('pointermove', (e) => {
     const prev = pointers.get(e.pointerId);
     if (!prev) return;
-    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY, e.timeStamp]);
     moved += Math.abs(e.clientX - prev[0]) + Math.abs(e.clientY - prev[1]);
     if (moved > 4) svg.classList.add('drag');
     if (pointers.size === 2) {
@@ -668,17 +880,45 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
         zoomAt(pinch / d, x, y, false);
       }
       pinch = d;
+      fling = null;
       return;
     }
     const k = scale();
     hideTip();
+    const dt = Math.max(1, e.timeStamp - prev[2]);
+    fling = [(e.clientX - prev[0]) / k / dt, (e.clientY - prev[1]) / k / dt];
     setView([vb[0] - (e.clientX - prev[0]) / k, vb[1] - (e.clientY - prev[1]) / k, vb[2], vb[3]]);
   });
+  function glide() {
+    if (!fling || reduceMotion.matches) return;
+    let [vx, vy] = fling;
+    if (Math.hypot(vx, vy) * scale() < 0.25) return; // under 0.25 px/ms: a deliberate stop, not a flick
+    let last = performance.now();
+    const step = (now) => {
+      const dt = now - last;
+      last = now;
+      const decay = 0.994 ** dt;
+      vx *= decay;
+      vy *= decay;
+      vb = clamp([vb[0] - vx * dt, vb[1] - vy * dt, vb[2], vb[3]]);
+      svg.setAttribute('viewBox', vb.map((v) => v.toFixed(1)).join(' '));
+      placeMarkers();
+      tilesSoon(now);
+      if (Math.hypot(vx, vy) * scale() > 0.02) anim = requestAnimationFrame(step);
+      else {
+        anim = 0;
+        render();
+      }
+    };
+    anim = requestAnimationFrame(step);
+  }
   const release = (e) => {
     const wasClick = pointers.size === 1 && moved <= 4;
+    const wasDrag = pointers.size === 1 && moved > 4;
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = 0;
     if (!pointers.size) svg.classList.remove('drag');
+    if (wasDrag && e.type === 'pointerup') glide();
     if (wasClick && e.type === 'pointerup') {
       // the event target is the svg (pointer capture), so find the region under the pointer
       const hit = document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.dataset?.rid);
@@ -693,6 +933,13 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   });
   box.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') select(null);
+    const pan = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (pan) {
+      e.preventDefault();
+      animateTo([vb[0] + pan[0] * vb[2] * 0.2, vb[1] + pan[1] * vb[3] * 0.2, vb[2], vb[3]], 200);
+    }
+    if (e.key === '+' || e.key === '=') zoomAt(0.7, ...centre());
+    if (e.key === '-') zoomAt(1 / 0.7, ...centre());
   });
   const centre = () => [vb[0] + vb[2] / 2, vb[1] + vb[3] / 2];
   $('map-in').addEventListener('click', () => zoomAt(0.55, ...centre()));
@@ -714,13 +961,19 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   markSound();
   buildFilters();
   applyLayers();
-  new ResizeObserver(() => geo && setView(vb)).observe(svg);
+  new ResizeObserver(([entry]) => {
+    size = { w: entry.contentRect.width || 1, h: entry.contentRect.height || 1 };
+    if (geo) setView(vb);
+  }).observe(svg);
+  document.addEventListener('visibilitychange', kickFx);
+  reduceMotion.addEventListener?.('change', kickFx);
 
   return {
-    /** Called when the Map tab opens or closes. Polls only while visible. */
+    /** Called when the Map tab opens or closes. Polls and animates only while visible. */
     setActive(on) {
       active = on;
       clearInterval(timer);
+      kickFx();
       if (!on) return;
       poll();
       timer = setInterval(() => {
@@ -731,6 +984,8 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       zone = null;
       geo = null;
       live = null;
+      puffs = [];
+      emitters = {};
       select(null);
       if (active) poll();
     },

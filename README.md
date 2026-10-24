@@ -47,7 +47,8 @@ Browser ──▶ Worker ──▶ /api/* ────────────�
 | `src/store.js` | Event log, pruning, compressed chunked snapshots |
 | `src/stats.js` | Leaderboards, outfits, faction split, hourly history, player detail |
 | `src/map.js` | Map state: ownership, base presence, fight detection, captures |
-| `public/map.js` | The map view: tiles, hex territories, lattice, fight markers, zoom sounds |
+| `public/map.js` | The map view: tiles, hex territories, influence cloud, lattice, battle bubbles, region card, zoom sounds |
+| `public/map-logic.js` | Pure map helpers (cut-off territory, bubble rate, base labels), unit tested |
 | `scripts/fetch-map-assets.mjs` | Downloads map tiles and sounds from ps2alerts/assets at a pinned commit |
 | `src/api.js` | Routes, validation, short response memo |
 | `src/config.js` | Server list (add a world here), windows, env |
@@ -75,8 +76,16 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   owner). Ownership is polled every 2 minutes and updated live from `FacilityControl`. Fights are estimated:
   kills only carry a continent, so they are placed at bases where a participant was seen capturing or
   defending in the last 15 minutes.
-- **Map details:** styled after the in-game map, with toggles inspired by Honu (terrain, territory, region borders,
-  hex grid, lattice, bases, names, battles, players seen). Hex geometry is adapted from Honu (MIT,
+- **Map details:** styled after the in-game map, with filters named like the in-game panel (terrain, facilities,
+  facility connections, territory control, hotspots, influence cloud, grid, plus region borders, names and players
+  seen). Empire colours are blended over the terrain with `hard-light` so the relief shows through, as in the game.
+  The **influence cloud** is the territory blurred into a small bitmap once per ownership change, so it costs nothing
+  while panning. **Battle bubbles** are short orange puffs on a canvas over the map: a fight's puff rate follows the
+  server's measured heat at that base, but individual puffs are not individual kills and their spread around the base
+  is decorative. **Cut-off** territory (not linked to its empire's warpgate through its own lattice, computed from
+  ownership and `facility_link`) is dimmed. Markers are built once per update and only re-scaled while zooming, and a
+  drag glides to a stop; arrow keys pan and +/- zoom. Base icons are original glyphs, not game art (rule 10).
+  Hex geometry is adapted from Honu (MIT,
   `src/map/LedgerModels.ts`). Clicking a region shows its owner, the outfit that captured it (only for flips seen
   since tracking started), combat in the last 10 minutes and recent captures. Player counts are distinct characters
   seen in events at that base, shown as a floor ("8+ seen"). Daybreak does not publish per-base populations and
