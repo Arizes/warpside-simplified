@@ -1,4 +1,5 @@
-// Event tuple: [tsMs, world, attackerId, victimId, weaponId, flag, attackerTeam, victimTeam]
+// Event tuple: [tsMs, world, attackerId, victimId, weaponId, flag, attackerTeam, victimTeam, zone]
+// (zone is missing on events saved before it was recorded; treat that as unknown.)
 // flag: 0 kill, 1 teamkill, 2 suicide / environment. IDs are strings (64-bit in Census).
 export const KILL = 0;
 export const TEAMKILL = 1;

@@ -9,6 +9,15 @@ here are not used and are kept for reference only._
 `characters:["all"]`; `serviceStateChanged.detail` names several endpoints in one string, for example
 `EventServerEndpoint_1000_Genudine_1001_Palos_1002_Crux_1003_Searhus_1004_Xelas` (world id first).
 
+**Verified 2026-10-24 for the map (ps2ps4us, Indar and Oshur):** `map_hex` (`map_region_id`, `x`, `y`; Indar
+1,051 hexes, Oshur 2,687, paged with `c:limit=1000&c:start=`), `map_region` (`facility_id`, `facility_name`,
+`facility_type_id`, `location_x`, `location_z`; Indar 89 rows), `facility_link` (`facility_id_a/b`; Indar 130)
+and `map?world_id=&zone_ids=2,4,6,8,344` (`Regions.Row[].RowData.{RegionId,FactionId}`; Esamir was absent from the
+response while locked, and Ceres Indar returned 70 of 89 regions as faction 0). On the stream,
+`PlayerFacilityCapture`/`PlayerFacilityDefend` arrive with `characters:["all"]` and carry `facility_id`,
+`zone_id`, `outfit_id`; `FacilityControl` needs a world-only subscription and carries `old_faction_id`,
+`new_faction_id`, `duration_held` (a defence arrives with old = new). `Death` carries `zone_id`, not a position.
+
 Tags:
 
 - **[V-live]**: confirmed against the live API or its official documentation page.

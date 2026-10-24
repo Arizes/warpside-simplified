@@ -1,22 +1,23 @@
 import { KILL, TEAMKILL, SUICIDE } from './store.js';
 
-const EVENTS = ['Death', 'PlayerLogin', 'PlayerLogout'];
+const CHARACTER_EVENTS = ['Death', 'PlayerLogin', 'PlayerLogout', 'PlayerFacilityCapture', 'PlayerFacilityDefend'];
+const WORLD_EVENTS = ['FacilityControl'];
 
 /** Workers open outbound WebSockets with fetch, which takes an https URL plus an Upgrade header. */
 export function streamUrl(env, serviceId) {
   return `https://push.planetside2.com/streaming?environment=${env}&service-id=s:${serviceId}`;
 }
 
-/** Death is character-centric: Census only sends it with characters:["all"]. */
-export function subscribeMessage(worlds) {
-  return {
-    service: 'event',
-    action: 'subscribe',
-    characters: ['all'],
-    worlds: worlds.map(String),
-    eventNames: EVENTS,
-    logicalAndCharactersWithWorlds: true,
-  };
+/**
+ * Character-centric events (Death, captures) only arrive with characters:["all"]; FacilityControl is
+ * world-centric and needs its own subscription without a character filter (verified live 2026-10-24).
+ */
+export function subscribeMessages(worlds) {
+  const w = worlds.map(String);
+  return [
+    { service: 'event', action: 'subscribe', characters: ['all'], worlds: w, eventNames: CHARACTER_EVENTS, logicalAndCharactersWithWorlds: true },
+    { service: 'event', action: 'subscribe', worlds: w, eventNames: WORLD_EVENTS },
+  ];
 }
 
 /**
@@ -44,8 +45,19 @@ export function parseMessage(m, servers, nowMs = Date.now()) {
   if (!servers[world]) return null;
   const ts = (Number(p.timestamp) || nowMs / 1000) * 1000;
 
+  // zone_id carries instance bits above the low 16 for some zones; the continent id is the low part.
+  const zone = Number(p.zone_id) & 0xffff;
+  const fac = /^\d{1,12}$/.test(p.facility_id || '') ? p.facility_id : null;
+
   if (p.event_name === 'PlayerLogin') return { kind: 'login', world, ts, id: p.character_id };
   if (p.event_name === 'PlayerLogout') return { kind: 'logout', world, ts, id: p.character_id };
+  if (p.event_name === 'PlayerFacilityCapture' || p.event_name === 'PlayerFacilityDefend') {
+    return fac ? { kind: 'facility', world, ts, zone, fac, id: p.character_id } : null;
+  }
+  if (p.event_name === 'FacilityControl') {
+    if (!fac) return null;
+    return { kind: 'control', world, ts, zone, fac, from: Number(p.old_faction_id) || 0, to: Number(p.new_faction_id) || 0 };
+  }
   if (p.event_name !== 'Death') return null;
 
   const attacker = p.attacker_character_id;
@@ -57,6 +69,6 @@ export function parseMessage(m, servers, nowMs = Date.now()) {
     kind: 'death',
     world,
     ts,
-    event: [ts, world, attacker || '0', victim, p.attacker_weapon_id || '0', flag, Number(p.attacker_team_id) || 0, Number(p.team_id) || 0],
+    event: [ts, world, attacker || '0', victim, p.attacker_weapon_id || '0', flag, Number(p.attacker_team_id) || 0, Number(p.team_id) || 0, zone],
   };
 }

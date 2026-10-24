@@ -1,10 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
 import { createApi } from './api.js';
-import { createLookups } from './census.js';
+import { createLookups, fetchOwnership, fetchZoneStatic } from './census.js';
 import { SERVERS, loadConfig, worldsByEnv } from './config.js';
 import { applyRecord } from './ingest.js';
+import { ZONE_IDS, createMapState, pruneMap } from './map.js';
 import { createState, packState, prune, unpackState } from './store.js';
-import { parseMessage, streamUrl, subscribeMessage } from './stream.js';
+import { parseMessage, streamUrl, subscribeMessages } from './stream.js';
 
 const TICK_MS = 30_000; // keep-alive, watchdog and reconnect cadence
 const SAVE_EVERY = 2; // ticks between snapshots
@@ -12,6 +13,8 @@ const LOOKUP_MS = 3000; // minimum gap between Census lookup batches
 const STALE_MS = 90_000; // heartbeats arrive every ~30 s; silence means the socket is dead
 const RESUBSCRIBE_MS = 10 * 60_000;
 const SNAP_KEY = 'snap:';
+const STATIC_KEY = 'static:';
+const OWNERSHIP_EVERY = 4; // ticks between map ownership polls (2 minutes; FacilityControl fills the gaps)
 
 /**
  * The single collector. It holds both stream connections, the rolling event log and the
@@ -35,7 +38,21 @@ export class Tracker extends DurableObject {
     this.savedChunks = 0;
     this.alarmSet = false;
     this.lookups = createLookups({ serviceId: this.config.serviceId, state: this.state });
-    this.api = createApi({ state: this.state, config: this.config, status: this.status, feed: this.feed });
+    this.map = createMapState();
+    this.statics = {}; // `${ns}:${zone}` -> continent geometry
+    this.staticLoading = {};
+    this.facRegion = {}; // `${ns}:${zone}` -> { facilityId: regionId }
+    this.api = createApi({
+      state: this.state,
+      config: this.config,
+      status: this.status,
+      feed: this.feed,
+      map: this.map,
+      statics: {
+        loaded: (world) => Object.fromEntries(ZONE_IDS.map((z) => [z, this.statics[`${SERVERS[world].ns}:${z}`]]).filter(([, g]) => g)),
+        get: (world, zone) => this.getStatic(SERVERS[world].ns, zone),
+      },
+    });
     this.lastFlush = 0;
     this.flushing = false;
     ctx.blockConcurrencyWhile(() => this.restore());
@@ -68,8 +85,44 @@ export class Tracker extends DurableObject {
   }
 
   subscribe(env) {
-    this.sockets[env]?.send(JSON.stringify(subscribeMessage(this.byEnv[env])));
+    for (const msg of subscribeMessages(this.byEnv[env])) this.sockets[env]?.send(JSON.stringify(msg));
     this.lastSub[env] = Date.now();
+  }
+
+  /**
+   * Continent geometry, from memory, then this object's storage, then Census (one-off, about 3 to 5
+   * requests per continent). It only changes with game updates; delete the `static:` keys to refresh.
+   */
+  getStatic(ns, zone) {
+    const key = `${ns}:${zone}`;
+    if (this.statics[key]) return Promise.resolve(this.statics[key]);
+    return (this.staticLoading[key] ||= (async () => {
+      let geo = await this.ctx.storage.get(STATIC_KEY + key);
+      if (!geo) {
+        geo = await fetchZoneStatic({ serviceId: this.config.serviceId }, ns, zone);
+        await this.ctx.storage.put(STATIC_KEY + key, geo);
+      }
+      this.statics[key] = geo;
+      const byFac = {};
+      for (const [rid, r] of Object.entries(geo.regions)) if (r.fac) byFac[r.fac] = rid;
+      this.facRegion[key] = byFac;
+      return geo;
+    })().finally(() => delete this.staticLoading[key]));
+  }
+
+  regionOf(world, zone, fac) {
+    return this.facRegion[`${SERVERS[world]?.ns}:${zone}`]?.[fac] || null;
+  }
+
+  async pollOwnership() {
+    for (const world of Object.keys(SERVERS).map(Number)) {
+      try {
+        const owners = await fetchOwnership({ serviceId: this.config.serviceId }, SERVERS[world].ns, world, ZONE_IDS);
+        this.map.owners[world] = { ...this.map.owners[world], ...owners };
+      } catch (err) {
+        console.warn('ownership poll failed:', err.message);
+      }
+    }
   }
 
   async connect(env) {
@@ -108,7 +161,7 @@ export class Tracker extends DurableObject {
     } catch {
       return; // malformed frame: ignore, never crash the collector
     }
-    if (record && applyRecord(this.state, this.lookups, this.feed, record)) this.dirty = true;
+    if (record && applyRecord(this.state, this.lookups, this.feed, record, this.map, (w, z, f) => this.regionOf(w, z, f))) this.dirty = true;
     this.maybeFlush();
   }
 
@@ -135,6 +188,10 @@ export class Tracker extends DurableObject {
   /** Idempotent: opens any missing connection and makes sure the keep-alive alarm is set. */
   async ensure() {
     await this.connectAll();
+    if (!this.ownershipPolled) {
+      this.ownershipPolled = true; // first poll right away, so a restart does not show a blank map
+      this.ctx.waitUntil(this.pollOwnership());
+    }
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
 
@@ -156,6 +213,8 @@ export class Tracker extends DurableObject {
     }
     try {
       await this.connectAll();
+      pruneMap(this.map, now);
+      if (this.ticks % OWNERSHIP_EVERY === 1) await this.pollOwnership();
       if (this.ticks % SAVE_EVERY === 0) await this.persist();
     } catch (err) {
       console.error('tick failed:', err.message);

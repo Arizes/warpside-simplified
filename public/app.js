@@ -1,13 +1,15 @@
 // Dashboard client. Every string from the API (character names, outfits) is untrusted,
 // so nodes are built with textContent only: no innerHTML anywhere.
+import { createMap } from './map.js';
+
 const $ = (id) => document.getElementById(id);
 const SVG = 'http://www.w3.org/2000/svg';
 const CENSUS = 'https://census.daybreakgames.com'; // images load straight from Census
 const EMBLEM = { 1: '94', 2: '12', 3: '18', 4: '93615' };
 const TAG = { 1: 'VS', 2: 'NC', 3: 'TR', 4: 'NSO' };
 const EMPIRE = { 1: 'Vanu Sovereignty', 2: 'New Conglomerate', 3: 'Terran Republic' };
-const TABS = ['live', 'players', 'outfits', 'weapons'];
-const TITLES = { live: 'Live leaderboard', players: 'Top players', outfits: 'Top outfits', weapons: 'Top weapons' };
+const TABS = ['live', 'players', 'map'];
+const TITLES = { live: 'Live leaderboard', players: 'Top players', map: 'Live map' };
 const POLL_MS = 30000; // every poll is a Worker request, and the free plan allows 100k a day
 
 const view = {
@@ -17,9 +19,9 @@ const view = {
   data: null,
   players: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
   outfits: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
-  weapons: { q: '', sort: { key: 'kills', dir: -1 } },
 };
 let timer;
+let map = null;
 
 function safeGet(k) {
   try { return localStorage.getItem(k); } catch { return null; }
@@ -80,7 +82,7 @@ function buildTable({ cols, rows, sort, onSort, onRow, empty }) {
   return el('table', {}, el('thead', {}, head), el('tbody', {}, ...body));
 }
 
-const SORTERS = { k: (r) => r.k, d: (r) => r.d, kd, kpm: (r) => r.kpm, members: (r) => r.members, perMember: (r) => r.k / r.members, kills: (r) => r.kills, users: (r) => r.users };
+const SORTERS = { k: (r) => r.k, d: (r) => r.d, kd, kpm: (r) => r.kpm, members: (r) => r.members, perMember: (r) => r.k / r.members };
 function sorted(rows, sort) {
   const get = SORTERS[sort.key] || SORTERS.k;
   return [...rows].sort((a, b) => (get(b) - get(a)) * -sort.dir);
@@ -110,19 +112,6 @@ function miniPlayers(list) {
     empty: 'No kills recorded for this empire yet.',
   });
 }
-function miniOutfits(list) {
-  return buildTable({
-    cols: [
-      { label: 'Outfit', cell: (o) => el('span', { class: `c${o.faction}`, text: o.tag ? `[${o.tag}] ${o.name}` : o.name }) },
-      { label: 'Kills', n: true, cell: (o) => num(o.k) },
-      { label: 'Deaths', n: true, cell: (o) => num(o.d) },
-      { label: 'K/D', n: true, cell: kdText },
-      { label: 'Members', n: true, cell: (o) => String(o.members) },
-    ],
-    rows: list,
-    empty: 'Outfits need two active members to rank.',
-  });
-}
 function renderLive(s = view.data) {
   const total = s.factions.reduce((a, f) => a + f.k, 0);
   $('empires').replaceChildren(...[1, 2, 3].map((f) => {
@@ -133,9 +122,7 @@ function renderLive(s = view.data) {
       el('header', { class: 'ehead' }, emblem(f, 30), el('h2', { text: EMPIRE[f] }), el('span', { class: 'share', text: `${share}%` })),
       el('h3', { text: 'Top players' }),
       el('div', { class: 'scroll' }, miniPlayers(top)),
-      el('p', { class: 'totals' }, el('span', { text: 'Empire total' }), el('span', { text: `${num(tot.k)} kills` }), el('span', { text: `${num(tot.d)} deaths` }), el('span', { text: `K/D ${kdText(tot)}` })),
-      el('h3', { text: 'Top outfits' }),
-      el('div', { class: 'scroll' }, miniOutfits(s.byFaction[f].outfits.slice(0, 5))));
+      el('p', { class: 'totals' }, el('span', { text: 'Empire total' }), el('span', { text: `${num(tot.k)} kills` }), el('span', { text: `${num(tot.d)} deaths` }), el('span', { text: `K/D ${kdText(tot)}` })));
   }));
   const bar = el('div', { class: 'fbar' });
   for (const f of s.factions) {
@@ -149,7 +136,7 @@ function renderLive(s = view.data) {
   drawChart($('chart'), s.hourly);
 }
 
-/* ---------- players / outfits / weapons tabs ---------- */
+/* ---------- players tab and the outfit viewer ---------- */
 function chips(container, state, rerender) {
   const items = [[0, 'All empires'], [1, 'VS'], [2, 'NC'], [3, 'TR']];
   container.replaceChildren(...items.map(([f, label]) => {
@@ -200,24 +187,14 @@ function renderOutfits() {
     empty: q ? 'No outfits match that filter.' : 'Outfits need at least two active members to rank.',
   }));
 }
-function renderWeapons() {
-  const st = view.weapons;
-  const q = st.q.toLowerCase();
-  const rows = sorted(view.data.weapons.filter((w) => !q || w.name.toLowerCase().includes(q)), st.sort);
-  $('weapons-table').replaceChildren(buildTable({
-    cols: [
-      { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
-      { label: 'Weapon', cell: (w) => weaponCell(w.name, w.img) },
-      { label: 'Kills', n: true, sort: 'kills', cell: (w) => num(w.kills) },
-      { label: 'Players', n: true, sort: 'users', cell: (w) => num(w.users) },
-      { label: 'Best user', cell: (w) => el('span', {}, w.top, el('span', { class: 'sub', text: ` · ${num(w.topKills)}` })) },
-    ],
-    rows, sort: st.sort, onSort: (k) => toggleSort(st, k, renderWeapons),
-    empty: q ? 'No weapons match that filter.' : 'No weapon kills recorded yet.',
-  }));
-}
-
-const RENDER = { live: renderLive, players: renderPlayers, outfits: renderOutfits, weapons: renderWeapons };
+const RENDER = {
+  live: () => {
+    renderLive();
+    renderOutfits();
+  },
+  players: renderPlayers,
+  map: () => {}, // the map polls its own endpoint while visible
+};
 
 /* ---------- chart ---------- */
 function drawChart(target, buckets) {
@@ -278,6 +255,7 @@ function show(tab) {
   }
   $('view-title').textContent = TITLES[view.tab];
   document.body.dataset.tab = view.tab;
+  map?.setActive(view.tab === 'map');
   if (view.data) RENDER[view.tab]();
 }
 function setAlert(msg) {
@@ -334,7 +312,8 @@ async function init() {
     if (!servers.some((s) => s.id === view.world)) view.world = servers[0].id;
     $('world').replaceChildren(...servers.map((s) => el('button', { type: 'button', 'data-v': String(s.id), title: s.region, text: s.name })));
   } catch { /* the stats call below reports the outage */ }
-  segment($('world'), view.world, (v) => { view.world = Number(v); safeSet('world', v); load(); });
+  map = createMap({ $, el, api, emblem, getWorld: () => view.world });
+  segment($('world'), view.world, (v) => { view.world = Number(v); safeSet('world', v); load(); map.worldChanged(); });
   if (!['1h', '6h', '24h'].includes(view.win)) view.win = '24h';
   segment($('window'), view.win, (v) => { view.win = v; safeSet('window', v); load(); });
 
@@ -353,7 +332,7 @@ async function init() {
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
   show(location.hash.slice(1));
 
-  for (const key of ['players', 'outfits', 'weapons']) {
+  for (const key of ['players', 'outfits']) {
     $(`${key}-q`).addEventListener('input', (e) => { view[key].q = e.target.value.trim(); RENDER[key](); });
   }
   $('p-close').addEventListener('click', () => $('player').close());

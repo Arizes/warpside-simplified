@@ -7,6 +7,7 @@ one cron trigger. There is nothing else to create.
 
 ```sh
 npm install
+npm run assets                              # map tiles and sounds must be in public/ before deploying
 npx wrangler login                          # once
 npx wrangler secret put CENSUS_SERVICE_ID   # paste your Census service ID; never commit it
 npm run deploy
@@ -67,3 +68,9 @@ that hosts nothing else. A busy neighbour could stop the collector, and the coll
 neighbour. If a dedicated free account is not an option, the Workers Paid plan ($5/month) lifts these caps
 (one always-on object stays inside its included 400,000 GB-s/month), or run the Node version from the first
 commit on a small VPS behind Cloudflare's proxy.
+
+## Census request volume
+
+Name and weapon lookups are batched (up to 100 ids per request). The map adds one ownership request per server
+every 2 minutes (about 1,440 a day for both servers) and a one-off 3 to 5 requests per continent for its
+geometry, which is then kept in Durable Object storage.

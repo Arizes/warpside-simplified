@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Warpside2 · PlanetSide 2 live leaderboards</title>
-  <meta name="description" content="Live PlanetSide 2 leaderboards for Genudine and Ceres: top players, outfits and weapons by empire over the last 24 hours.">
+  <meta name="description" content="Live PlanetSide 2 leaderboards and continent map for Genudine and Ceres: top players and outfits by empire, live fights and base captures.">
   <meta name="theme-color" content="#070b12">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,11 +21,10 @@
       <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M16 2 29 9.5v13L16 30 3 22.5v-13z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11l3.5 10L16 13l3.5 8L23 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
       <span>WARPSIDE<b>2</b></span>
     </a>
-    <nav class="tabs" id="tabs" role="tablist" aria-label="Leaderboards">
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Views">
       <button role="tab" id="tab-live" aria-controls="view-live" data-v="live">Live</button>
       <button role="tab" id="tab-players" aria-controls="view-players" data-v="players">Players</button>
-      <button role="tab" id="tab-outfits" aria-controls="view-outfits" data-v="outfits">Outfits</button>
-      <button role="tab" id="tab-weapons" aria-controls="view-weapons" data-v="weapons">Weapons</button>
+      <button role="tab" id="tab-map" aria-controls="view-map" data-v="map">Map</button>
     </nav>
     <div class="controls">
       <div class="seg" id="world" role="group" aria-label="Server"></div>
@@ -65,6 +64,15 @@
         </div>
       </section>
       <div class="empires" id="empires"></div>
+
+      <section class="panel outfits" aria-labelledby="outfits-title">
+        <div class="toolbar">
+          <h2 id="outfits-title">Outfits</h2>
+          <div class="chips" id="outfits-chips" role="group" aria-label="Empire"></div>
+          <label class="search"><span class="sr">Filter outfits</span><input id="outfits-q" type="search" placeholder="Filter by tag or name" autocomplete="off" maxlength="32"></label>
+        </div>
+        <div class="viewer" id="outfits-table" tabindex="0" aria-label="Outfit leaderboard, scrollable"></div>
+      </section>
     </div>
 
     <div id="view-players" role="tabpanel" aria-labelledby="tab-players" hidden>
@@ -77,24 +85,42 @@
       </section>
     </div>
 
-    <div id="view-outfits" role="tabpanel" aria-labelledby="tab-outfits" hidden>
-      <section class="panel">
-        <div class="toolbar">
-          <div class="chips" id="outfits-chips" role="group" aria-label="Empire"></div>
-          <label class="search"><span class="sr">Filter outfits</span><input id="outfits-q" type="search" placeholder="Filter by tag or name" autocomplete="off" maxlength="32"></label>
-        </div>
-        <div class="scroll" id="outfits-table"></div>
-      </section>
-    </div>
-
-    <div id="view-weapons" role="tabpanel" aria-labelledby="tab-weapons" hidden>
-      <section class="panel">
-        <div class="toolbar">
-          <p class="note">Most-used weapons by kills. Best user is the player with the most kills with that weapon.</p>
-          <label class="search"><span class="sr">Filter weapons</span><input id="weapons-q" type="search" placeholder="Filter weapons" autocomplete="off" maxlength="32"></label>
-        </div>
-        <div class="scroll" id="weapons-table"></div>
-      </section>
+    <div id="view-map" role="tabpanel" aria-labelledby="tab-map" hidden>
+      <div class="mapwrap">
+        <section class="mapbox" id="map-box" aria-label="Continent map">
+          <svg id="map-svg" role="img" aria-label="Continent map with territory, lattice links, bases and live fights"></svg>
+          <div class="map-ctl" role="group" aria-label="Map controls">
+            <button type="button" id="map-in" title="Zoom in"><span class="sr">Zoom in</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg></button>
+            <button type="button" id="map-out" title="Zoom out"><span class="sr">Zoom out</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12"/></svg></button>
+            <button type="button" id="map-fit" title="Show whole continent"><span class="sr">Show whole continent</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/></svg></button>
+            <button type="button" id="map-sound" aria-pressed="true"><span class="sr">Zoom sounds on</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h3l4-3v10l-4-3H3z"/><path class="wave" d="M13 7.5a3.5 3.5 0 0 1 0 5M15 5.5a6.5 6.5 0 0 1 0 9"/></svg></button>
+          </div>
+          <div class="map-legend" aria-hidden="true">
+            <span><i class="lg-fight"></i>Active fight</span>
+            <span><i class="lg-diamond"></i>Major base</span>
+            <span><i class="lg-dash"></i>Contested link</span>
+          </div>
+          <div class="map-tip" id="map-tip" hidden></div>
+          <p class="map-status" id="map-status" hidden></p>
+        </section>
+        <aside class="mapside">
+          <section class="panel">
+            <p class="eyebrow">Continent</p>
+            <h2 id="map-title">Map</h2>
+            <p class="note" id="map-sub"></p>
+            <div class="zones" id="map-zones"></div>
+          </section>
+          <section class="panel">
+            <h2>Hottest fights</h2>
+            <div class="fights" id="map-fights"></div>
+          </section>
+          <section class="panel">
+            <h2>Recent captures</h2>
+            <ul class="captures" id="map-captures"></ul>
+          </section>
+          <p class="note small">Fights are estimated: Daybreak publishes the continent of each kill, not its position, so kills are placed at bases where a participant was recently seen capturing or defending.</p>
+        </aside>
+      </div>
     </div>
   </main>
 
@@ -112,7 +138,7 @@
   </dialog>
 
   <footer>
-    <p>Data from the Daybreak Census API and event stream, counted from kills seen since the tracker started. Warpside2 is a fan project, not affiliated with or endorsed by Daybreak Games. PlanetSide is a trademark of Daybreak Games Company LLC.</p>
+    <p>Data from the Daybreak Census API and event stream, counted from kills seen since the tracker started. Map tiles and sounds from <a href="https://github.com/ps2alerts/assets">ps2alerts/assets</a> (MIT), used with permission. Warpside2 is a fan project, not affiliated with or endorsed by Daybreak Games. PlanetSide is a trademark of Daybreak Games Company LLC.</p>
   </footer>
 
   <script src="/app.js" type="module"></script>

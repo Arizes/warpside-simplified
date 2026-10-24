@@ -3,6 +3,65 @@ import { SERVERS } from './config.js';
 const ID = /^\d{1,20}$/; // Census IDs are 64-bit: keep them as strings, never numbers
 const BATCH = 100;
 
+/** One Census REST call. Callers build `query` only from validated ids and constants. */
+export async function censusGet({ serviceId, fetchImpl = fetch }, ns, coll, query) {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/${ns}/${coll}?${query}`;
+  const r = await fetchImpl(url, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`Census HTTP ${r.status}`);
+  const j = await r.json();
+  if (j.error || j.errorCode) throw new Error(`Census ${j.error || j.errorCode}`);
+  const list = j[`${coll}_list`];
+  return Array.isArray(list) ? list : [];
+}
+
+const num = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+
+/**
+ * Static geometry of one continent: hexes [x, y, regionId], regions by id, and lattice links.
+ * Verified live 2026-10-24: Indar has 1,051 hexes and 89 regions, Oshur 2,687 hexes.
+ */
+export async function fetchZoneStatic(opts, ns, zone) {
+  let hexes = [];
+  for (let start = 0; start < 20000; start += 1000) {
+    const page = await censusGet(opts, ns, 'map_hex', `zone_id=${zone}&c:limit=1000&c:start=${start}&c:show=map_region_id,x,y`);
+    hexes = hexes.concat(page.map((h) => [num(h.x), num(h.y), String(h.map_region_id)]).filter((h) => h[0] !== null && h[1] !== null));
+    if (page.length < 1000) break;
+  }
+  const regions = {};
+  const list = await censusGet(opts, ns, 'map_region', `zone_id=${zone}&c:limit=1000&c:show=map_region_id,facility_id,facility_name,facility_type_id,location_x,location_z`);
+  for (const r of list) {
+    if (!ID.test(String(r.map_region_id))) continue;
+    regions[r.map_region_id] = {
+      fac: ID.test(String(r.facility_id || '')) ? String(r.facility_id) : null,
+      n: String(r.facility_name || '').slice(0, 80),
+      t: num(r.facility_type_id) || 0,
+      x: num(r.location_x),
+      z: num(r.location_z),
+    };
+  }
+  const links = (await censusGet(opts, ns, 'facility_link', `zone_id=${zone}&c:limit=1000&c:show=facility_id_a,facility_id_b`))
+    .map((l) => [String(l.facility_id_a), String(l.facility_id_b)])
+    .filter(([a, b]) => ID.test(a) && ID.test(b));
+  if (!hexes.length) throw new Error('no hexes');
+  return { hexes, regions, links };
+}
+
+/** Current owner of every region on the given continents of one world: { zone: { regionId: faction } }. */
+export async function fetchOwnership(opts, ns, world, zones) {
+  const out = {};
+  for (const m of await censusGet(opts, ns, 'map', `world_id=${world}&zone_ids=${zones.join(',')}`)) {
+    const zone = num(m.ZoneId);
+    const rows = m.Regions?.Row;
+    if (!zones.includes(zone) || !Array.isArray(rows)) continue;
+    const z = (out[zone] = {});
+    for (const r of rows) {
+      const id = String(r?.RowData?.RegionId ?? '');
+      if (ID.test(id)) z[id] = num(r.RowData.FactionId) || 0;
+    }
+  }
+  return out;
+}
+
 /**
  * Resolves character names/outfits and weapon names/images from the Census REST API.
  * Lookups are queued, batched, cached in `state`, and back off for 30 s after a failure.
@@ -16,14 +75,7 @@ export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.
     if (typeof id === 'string' && ID.test(id) && id !== '0') (m[ns] ||= new Set()).add(id);
   };
 
-  async function census(ns, coll, query) {
-    const url = `https://census.daybreakgames.com/s:${serviceId}/get/${ns}/${coll}?${query}`;
-    const r = await fetchImpl(url, { signal: AbortSignal.timeout(15000) });
-    if (!r.ok) throw new Error(`Census HTTP ${r.status}`);
-    const j = await r.json();
-    if (j.error || j.errorCode) throw new Error(`Census ${j.error || j.errorCode}`);
-    return j[`${coll}_list`] || [];
-  }
+  const census = (ns, coll, query) => censusGet({ serviceId, fetchImpl }, ns, coll, query);
 
   async function flush() {
     if (now() < backoffUntil) return;

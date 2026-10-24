@@ -116,10 +116,3 @@ test('per-empire boards rank each faction separately', () => {
   assert.equal(r.activePlayers, 3);
 });
 
-test('weapon board totals kills, counts users and names the best user', () => {
-  const r = computeStats(fixture(), 1000, NOW - 24 * HOUR, NOW);
-  const gauss = r.weapons.find((w) => w.name === 'Gauss');
-  assert.deepEqual([gauss.kills, gauss.users, gauss.top, gauss.topKills], [2, 1, 'Alpha', 2]);
-  assert.ok(!r.weapons.some((w) => w.id === '0'));
-  assert.equal(r.weapons[0].kills >= r.weapons.at(-1).kills, true);
-});

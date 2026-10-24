@@ -27,8 +27,14 @@ Durable Object (it would exceed the free duration budget), changing the CSP, or 
    `cloudflare:workers`.
 8. In the Durable Object, do not use timer callbacks for network I/O (they have no I/O context); drive work
    from events and the alarm.
-9. Only Honu (MIT) code may be adapted. Do not copy PS2Alerts (GPL-3.0) or LivePlanetmans (no licence).
-10. Do not bundle extracted game files. Images load from Census image paths.
+9. Only Honu (MIT) code may be adapted. Do not copy PS2Alerts application code (GPL-3.0) or LivePlanetmans
+   (no licence). The separate `ps2alerts/assets` repository (MIT) is covered by rule 10.
+10. Game art: the official continent map tiles and map sound effects from
+    [`ps2alerts/assets`](https://github.com/ps2alerts/assets) (MIT) **may be used**. The owner stated on
+    2026-10-24 that they have permission from the official developers to use them. They are downloaded by
+    `npm run assets` from a pinned commit (never committed to git), and the MIT notice ships with them in
+    `public/maps/NOTICE.txt`. Any other extracted game files still need the same kind of permission first.
+    Icons and emblems load from Census image paths.
 11. Comments explain why, not what. No model names or AI attribution in code comments.
 12. Stage files by explicit path; never `git add -A` or `git commit -a`.
 

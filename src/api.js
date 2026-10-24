@@ -1,4 +1,5 @@
 import { SERVERS, WINDOWS } from './config.js';
+import { ZONES, busiestZone, computeMap, createMapState } from './map.js';
 import { computePlayer, computeStats } from './stats.js';
 
 const CHAR_ID = /^\d{1,20}$/;
@@ -13,8 +14,10 @@ const HEADERS = {
 /**
  * Builds the JSON API as a (Request) => Response function. Dependencies are passed in
  * so tests run it without a Worker runtime, a stream or the network.
+ * `map` is the map state; `statics.loaded(world)` returns the continent geometry already in memory and
+ * `statics.get(world, zone)` loads one (from storage or Census).
  */
-export function createApi({ state, config, status, feed, now = Date.now }) {
+export function createApi({ state, config, status, feed, map = createMapState(), statics = { loaded: () => ({}), get: async () => null }, now = Date.now }) {
   const memo = new Map(); // `${world}:${window}` -> { at, body }
 
   const json = (code, obj, cache = 'no-store') =>
@@ -59,6 +62,20 @@ export function createApi({ state, config, status, feed, now = Date.now }) {
       if (world === null || win === null || !CHAR_ID.test(id)) return json(400, { error: 'invalid world, window or id' });
       const player = computePlayer(state, world, id, sinceOf(win, t), t);
       return player ? json(200, player) : json(404, { error: 'no activity for this character in the window' });
+    }
+    if (url.pathname === '/api/map' || url.pathname === '/api/map-static') {
+      const world = parseWorld(url);
+      const z = url.searchParams.get('zone');
+      const zone = z === null ? busiestZone(map, state.events, world, t) : Number(z);
+      if (world === null || !ZONES[zone]) return json(400, { error: 'invalid world or zone' });
+      if (url.pathname === '/api/map') return json(200, computeMap(map, statics.loaded(world), state.events, world, zone, t));
+      try {
+        const geo = await statics.get(world, zone);
+        // geometry never changes between game updates, so browsers and the edge may keep it for a day
+        return geo ? json(200, geo, 'public, max-age=86400') : json(503, { error: 'map data unavailable' });
+      } catch {
+        return json(503, { error: 'map data unavailable' });
+      }
     }
     if (url.pathname === '/api/servers') {
       return json(200, Object.entries(SERVERS).map(([id, s]) => ({ id: Number(id), name: s.name, region: s.region })), 'public, max-age=3600');
