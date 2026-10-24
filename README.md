@@ -18,7 +18,7 @@ Requires Node 22+.
 
 ```sh
 npm install
-npm run assets                   # downloads the map tiles and sounds (about 120 MB, not in git)
+npm run assets                   # map tiles and sounds (about 120 MB, not in git); dev and deploy also run it
 cp .dev.vars.example .dev.vars   # add your CENSUS_SERVICE_ID (free: https://census.daybreakgames.com/#devSignup)
 npm run dev                      # http://localhost:8787
 npm test

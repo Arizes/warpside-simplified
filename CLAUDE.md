@@ -45,8 +45,10 @@ Durable Object (it would exceed the free duration budget), changing the CSP, or 
 | `npm run dev` | Local Worker with a real Durable Object (reads `.dev.vars`) |
 | `npm test` | Unit tests (`node --test`, no network) |
 | `npm run deploy` | Deploy to Cloudflare |
+| `npm run assets` | Download map tiles and sounds into `public/` (also runs before `dev` and `deploy`) |
 
-Tests never call the real Census or stream.
+Tests never call the real Census or stream. Map tiles and sounds are not in git: a fresh clone gets them from
+`npm run assets`, which `predev` and `predeploy` run automatically; never deploy without them.
 
 ## Definition of done
 

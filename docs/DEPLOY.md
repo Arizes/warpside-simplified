@@ -7,7 +7,7 @@ one cron trigger. There is nothing else to create.
 
 ```sh
 npm install
-npm run assets                              # map tiles and sounds must be in public/ before deploying
+npm run assets                              # optional: npm run deploy runs it first anyway
 npx wrangler login                          # once
 npx wrangler secret put CENSUS_SERVICE_ID   # paste your Census service ID; never commit it
 npm run deploy

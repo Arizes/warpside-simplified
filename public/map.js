@@ -89,6 +89,18 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   let timer = 0;
   let active = false;
   const tiles = new Map(); // key -> <image>
+  let tilesMissing = false;
+  let dataError = false;
+  // One status line: a data outage wins over missing terrain, which only a developer can fix.
+  function setStatus() {
+    const msg = dataError
+      ? 'Map data is not available right now. Retrying.'
+      : tilesMissing
+        ? 'Terrain images are missing. Run "npm run assets" to download them.'
+        : '';
+    $('map-status').hidden = !msg;
+    $('map-status').textContent = msg;
+  }
 
   /* ---------- geometry ---------- */
   // Hex (x, y) to map coordinates. The lattice step is fitted against real base positions because
@@ -246,7 +258,13 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
         if (tiles.has(key)) continue;
         // tile_x_y: x is the column from the west edge, y the row from the north edge
         const img = svgEl('image', { href: `/maps/${key}.png`, x: -HALF + x * size, y: -HALF + y * size, width: size + 0.5, height: size + 0.5, class: lod === LODS[0] ? 'm-tile base' : 'm-tile', preserveAspectRatio: 'none' });
-        img.addEventListener('error', () => img.remove()); // assets not downloaded: hexes still work
+        img.addEventListener('error', () => {
+          img.remove(); // hexes still work without terrain
+          if (!tilesMissing) {
+            tilesMissing = true;
+            setStatus();
+          }
+        });
         if (lod === LODS[0]) layer.tiles.prepend(img);
         else layer.tiles.append(img);
         tiles.set(key, img);
@@ -411,10 +429,11 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       paintRegions();
       drawOverlays();
       renderSide();
-      $('map-status').hidden = true;
+      dataError = false;
+      setStatus();
     } catch {
-      $('map-status').hidden = false;
-      $('map-status').textContent = 'Map data is not available right now. Retrying.';
+      dataError = true;
+      setStatus();
       onError?.();
     }
   }

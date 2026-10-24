@@ -10,7 +10,9 @@
   },
   "scripts": {
     "assets": "node scripts/fetch-map-assets.mjs",
+    "predev": "node scripts/fetch-map-assets.mjs",
     "dev": "wrangler dev",
+    "predeploy": "node scripts/fetch-map-assets.mjs",
     "deploy": "wrangler deploy",
     "test": "node --test test/"
   },
