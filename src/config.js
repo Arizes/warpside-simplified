@@ -8,12 +8,17 @@ export const SERVERS = {
 // Windows the API will serve. The log never holds more than RETAIN_HOURS.
 export const WINDOWS = { '1h': 3600e3, '6h': 6 * 3600e3, '24h': 24 * 3600e3 };
 
-export function loadConfig(env = process.env) {
-  const retainHours = Number(env.RETAIN_HOURS) || 24;
+/** Worker bindings arrive as strings; the service ID is a secret. */
+export function loadConfig(env = {}) {
   return {
     serviceId: env.CENSUS_SERVICE_ID || 'example', // 'example' is limited to 10 req/min
-    port: Number(env.PORT) || 8080,
-    dataDir: env.DATA_DIR || './data',
-    retainMs: retainHours * 3600e3,
+    retainMs: (Number(env.RETAIN_HOURS) || 24) * 3600e3,
   };
+}
+
+/** Worlds grouped by streaming environment: one connection per environment. */
+export function worldsByEnv(servers = SERVERS) {
+  const byEnv = {};
+  for (const [world, s] of Object.entries(servers)) (byEnv[s.env] ||= []).push(Number(world));
+  return byEnv;
 }

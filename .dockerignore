@@ -1,8 +1,0 @@
-node_modules
-data
-.git
-.env*
-!.env.example
-test
-docs
-*.md

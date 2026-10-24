@@ -1,43 +1,59 @@
-# Deploying Warpside
+# Deploying Warpside to Cloudflare
 
-Warpside needs **one always-on process and a small persistent disk** (about 1 GB). It must not sleep: a
-sleeping host misses kills, and the 24-hour history would have gaps. Hosts that scale to zero or have
-ephemeral disks (serverless functions, Workers, free tiers that sleep) are not suitable.
+Everything runs on the **Workers Free** plan: one Worker, one SQLite-backed Durable Object, static assets and
+one cron trigger. There is nothing else to create.
 
-Any of these work:
-
-| Option | Notes |
-|---|---|
-| Small VPS with Docker | Cheapest and simplest. Run the image with a volume on `/data`. |
-| Fly.io | `fly launch` (uses the Dockerfile), `fly volumes create data --size 1`, mount at `/data`, `fly secrets set CENSUS_SERVICE_ID=...`. Keep one machine, never auto-stop. |
-| Railway / Render | Needs an always-on plan with a persistent disk at `/data`. |
-
-Check current prices before choosing; the process needs well under 256 MB of memory at PS4 volumes
-(measure with `/health` and your host's metrics after a day).
-
-## Docker
+## Deploy
 
 ```sh
-docker build -t warpside .
-docker run -d --restart=always --name warpside \
-  -p 8080:8080 -v warpside-data:/data \
-  -e CENSUS_SERVICE_ID=your-id warpside
+npm install
+npx wrangler login                          # once
+npx wrangler secret put CENSUS_SERVICE_ID   # paste your Census service ID; never commit it
+npm run deploy
 ```
 
-The container runs as a non-root user and has a health check on `/health`.
+The first deploy creates the Durable Object class and the cron trigger. The collector starts on the first
+request or at the next cron tick (within a minute). Open `/health`: `streams` should read `connected` for both
+environments and `events` should start climbing.
 
-## HTTPS and caching
+Optional: add a custom domain under Workers & Pages, Settings, Domains & Routes.
 
-Put the process behind a TLS-terminating proxy. Cloudflare (proxied DNS, or a Cloudflare Tunnel so no port is
-opened) works well and also caches `/img/*`. `/api/*` responses are `no-store`.
+## Free-plan budget (verified against Cloudflare docs, October 2026)
+
+| Resource | Free limit | Use |
+|---|---|---|
+| Durable Object duration | 13,000 GB-s/day | 128 MB x 86,400 s = about 11,060 GB-s/day (**85%**) |
+| Durable Object requests | 100,000/day (WebSocket messages count 20:1) | about 1,500 to 10,000 billed/day |
+| Durable Object row writes | 100,000/day | about 1,000 to 7,000/day (snapshots and alarms) |
+| Worker requests | 100,000/day, shared by all visitors | the page is free; each API poll is one |
+| Memory | 128 MB | tens of MB at peak |
+
+Measured stream rate (Genudine, one 9-minute sample): about 14 deaths/min, plus logins and heartbeats.
+
+**Capacity:** the dashboard polls every 30 s, which is 120 Worker requests per viewer-hour, so the free plan
+supports roughly 800 viewer-hours per day. If you outgrow it, publish snapshots to a public R2 bucket so the
+CDN serves them, or move to the Workers Paid plan ($5/month).
+
+## Risks and what to watch
+
+- **Duration is the tight limit.** If the quota is exhausted the collector stops until 00:00 UTC. Keep it to
+  one object; do not add a second always-on object to this account's free plan.
+- **Free limits can change.** Re-check the pricing pages before relying on this.
+- **Traffic spikes** can exhaust the 100,000 daily Worker requests; the API then returns errors until
+  00:00 UTC. The static page keeps working.
+- **Eviction or deploys** drop the stream briefly. The cron trigger and the 30-second alarm reconnect it, and
+  the snapshot restores the log, so the gap is typically under a minute.
 
 ## Operating notes
 
-- **Service ID:** set it as an environment variable or secret, never commit it. It is never logged or sent
-  to the browser.
-- **Backups:** none needed. The data is a rolling 24 hours; losing it only means the history restarts.
-- **Health:** `GET /health` lists the stream status per environment and the number of stored events.
-  `streams` should read `connected`; a frozen `events` count while players are online means the feed is down.
-- **Updating:** rebuild the image and restart. State is reloaded from the volume.
+- **Service ID** is a Worker secret, never logged (connection errors log only the message) and never sent to
+  the browser.
+- **Health:** `GET /health` shows stream status per environment and the stored event count. A frozen `events`
+  count while players are online means the feed is down.
+- **Usage:** check Workers & Pages, Durable Objects, Metrics for duration, requests and rows written.
+- **Updating:** `npm run deploy`. State is restored from the snapshot.
 - **Adding a server:** add an entry to `SERVERS` in `src/config.js` (namespace and stream environment from
-  `docs/research/census-api.md`).
+  `docs/research/census-api.md`). Another stream environment adds another always-on connection but not another
+  object.
+- **Fallback:** the first commit in the history is a plain Node version of this app (one process plus a JSON
+  file) that runs on any small VPS with a persistent disk.

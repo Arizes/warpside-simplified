@@ -1,72 +1,75 @@
-# Warpside
+# Warpside Simplified
 
 Live PlanetSide 2 leaderboards for the PS4 servers **Genudine** (US) and **Ceres** (EU): top players, top
 outfits, faction kills and kills per hour, over a rolling 24-hour window.
 
-One small Node process does everything. It listens to Daybreak's event stream, keeps the last 24 hours of
-kills in memory, and serves the dashboard and a tiny JSON API. No database, no build step, one runtime
-dependency (`ws`).
+It runs entirely on Cloudflare's free tier: one Worker serves the page and the API, and one Durable Object
+collects the kill stream and keeps the last 24 hours. No database, no server to maintain, no runtime
+dependencies.
 
-## Run it
+> The earlier, much larger Postgres-based design is archived at
+> [Arizes/warpside](https://github.com/Arizes/warpside). This project started from
+> [Arizes/ps2-stats-tracker](https://github.com/Arizes/ps2-stats-tracker).
+
+## Run it locally
 
 Requires Node 22+.
 
 ```sh
 npm install
-cp .env.example .env     # add your CENSUS_SERVICE_ID (free: https://census.daybreakgames.com/#devSignup)
-npm run dev              # http://localhost:8080
+cp .dev.vars.example .dev.vars   # add your CENSUS_SERVICE_ID (free: https://census.daybreakgames.com/#devSignup)
+npm run dev                      # http://localhost:8787
 npm test
 ```
 
 Leaderboards start empty and fill as kills arrive; the 24-hour history builds up the longer it runs.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `CENSUS_SERVICE_ID` | `example` | Your Census service ID. `example` is limited to 10 requests/min |
-| `PORT` | `8080` | HTTP port |
-| `DATA_DIR` | `./data` | Where `state.json` is saved (mount a volume here) |
-| `RETAIN_HOURS` | `24` | History kept |
-
 ## How it works
 
 ```
-Daybreak event stream ──ws──▶ src/stream.js ──▶ in-memory event log ──▶ src/stats.js ──▶ /api/*
-        (Death, login/out)     parse + reconnect   (state.json every 60 s)   leaderboards     │
-Census REST ◀── src/census.js (batched name / weapon / outfit lookups, cached)               ▼
-                                                                                      public/ dashboard
+Daybreak event stream ──outbound WebSocket──▶ Tracker (one Durable Object)
+   (Death, login, logout)                       ├─ parses events (src/stream.js)
+Census REST ◀── batched name/weapon lookups ────┤─ keeps the rolling event log in memory
+                                                ├─ snapshots it to its own storage every ~60 s
+Browser ──▶ Worker ──▶ /api/* ──────────────────┴─ computes leaderboards on request (src/stats.js)
+   └──▶ static page (public/, served by Cloudflare, free and unmetered)
 ```
 
 | File | Job |
 |---|---|
-| `server.js` | Wires everything together, saves state, handles shutdown |
-| `src/config.js` | Server list (add a world here), windows, env |
-| `src/stream.js` | Event-stream connection (reconnect, watchdog) and message parsing |
+| `src/worker.js` | Entry point: routes `/api/*` and `/health` to the Tracker, cron safety net |
+| `src/tracker.js` | The Durable Object: stream connections, state, snapshots, keep-alive alarm |
+| `src/stream.js` | Stream URL, subscription message and message parsing |
+| `src/ingest.js` | Applies a parsed record to the state |
 | `src/census.js` | Batched, cached, backed-off Census lookups |
-| `src/store.js` | Event log, pruning, atomic save/load |
+| `src/store.js` | Event log, pruning, compressed chunked snapshots |
 | `src/stats.js` | Leaderboards, outfits, faction split, hourly history, player detail |
-| `src/http.js` | Routes, validation, security headers, image proxy |
-| `public/` | The dashboard (plain HTML, CSS, ES modules) |
+| `src/api.js` | Routes, validation, short response memo |
+| `src/config.js` | Server list (add a world here), windows, env |
+| `public/` | The dashboard (plain HTML, CSS, ES modules) and `_headers` (CSP) |
 
 API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=<characterId>&window=24h`,
 `/api/servers`, `/health`. Windows are `1h`, `6h`, `24h`.
 
 ### Design decisions
 
-- **Memory plus one JSON file.** 24 hours of PS4 kills is small, so a database would add cost and
-  operations for no benefit. State is written atomically every minute and on shutdown; a restart loses at
-  most a minute.
-- **History is a rolling window, not an archive.** Nothing older than 24 hours is kept.
-- **Servers are configuration.** Each entry in `SERVERS` carries its own Census namespace and stream
-  environment.
+- **One Durable Object, no database.** 24 hours of PS4 kills is small. The object holds it in memory and
+  writes a gzipped snapshot in chunks to its own storage, so a restart loses about a minute. D1, KV, R2 and
+  Queues are deliberately not used.
+- **One object for both servers.** Free-plan duration is 13,000 GB-s per day; one always-on object uses about
+  11,000. A second object would exceed it.
+- **History is a rolling window**, not an archive.
+- **Servers are configuration** in `src/config.js`.
 - **Untrusted data stays at the edges.** Stream frames are parsed defensively, Census IDs are validated as
   digit strings before they enter a query, API parameters are allow-listed, the browser builds DOM with
-  `textContent` only, and a strict CSP is set on every response.
-- **Images come from Census.** Faction emblems and weapon icons are fetched from the Census image paths
-  through `/img/*` (allow-listed paths, small in-memory cache). No game files are bundled.
+  `textContent` only, and a strict CSP is set on every page.
+- **Images load directly from Census** in the visitor's browser (faction emblems and weapon icons), so they
+  cost the site no requests. No game files are bundled.
 
-Hosting: see [`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes: [`docs/research/census-api.md`](docs/research/census-api.md).
+Limits, risks and deployment: [`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
+[`docs/research/census-api.md`](docs/research/census-api.md).
 
 ## Credits
 
-Built on [`ps2-stats-tracker`](https://github.com/Arizes/ps2-stats-tracker). Data from the Daybreak Census
-API. Warpside is a fan project, not affiliated with or endorsed by Daybreak Games. MIT licence.
+Data from the Daybreak Census API. Warpside is a fan project, not affiliated with or endorsed by Daybreak
+Games. MIT licence.

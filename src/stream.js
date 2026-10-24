@@ -1,7 +1,23 @@
-import WebSocket from 'ws';
 import { KILL, TEAMKILL, SUICIDE } from './store.js';
 
 const EVENTS = ['Death', 'PlayerLogin', 'PlayerLogout'];
+
+/** Workers open outbound WebSockets with fetch, which takes an https URL plus an Upgrade header. */
+export function streamUrl(env, serviceId) {
+  return `https://push.planetside2.com/streaming?environment=${env}&service-id=s:${serviceId}`;
+}
+
+/** Death is character-centric: Census only sends it with characters:["all"]. */
+export function subscribeMessage(worlds) {
+  return {
+    service: 'event',
+    action: 'subscribe',
+    characters: ['all'],
+    worlds: worlds.map(String),
+    eventNames: EVENTS,
+    logicalAndCharactersWithWorlds: true,
+  };
+}
 
 /**
  * Turns one raw streaming message into a small normalised record, or null.
@@ -43,54 +59,4 @@ export function parseMessage(m, servers, nowMs = Date.now()) {
     ts,
     event: [ts, world, attacker || '0', victim, p.attacker_weapon_id || '0', flag, Number(p.attacker_team_id) || 0, Number(p.team_id) || 0],
   };
-}
-
-/**
- * Keeps one streaming connection per environment alive. Reconnects with capped
- * backoff; a watchdog drops a connection that has gone silent for 90 s.
- */
-export function connectStream({ env, worlds, serviceId, servers, onRecord, status }) {
-  const url = `wss://push.planetside2.com/streaming?environment=${env}&service-id=s:${serviceId}`;
-  let delay = 5000;
-
-  const open = () => {
-    const ws = new WebSocket(url);
-    let watchdog;
-    let resub;
-    const kick = () => {
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => ws.terminate(), 90e3);
-    };
-
-    ws.on('open', () => {
-      status[env] = 'connected';
-      delay = 5000;
-      kick();
-      // Death is character-centric: Census only sends it with characters:["all"].
-      const subscribe = () =>
-        ws.readyState === WebSocket.OPEN &&
-        ws.send(JSON.stringify({ service: 'event', action: 'subscribe', characters: ['all'], worlds: worlds.map(String), eventNames: EVENTS, logicalAndCharactersWithWorlds: true }));
-      subscribe();
-      resub = setInterval(subscribe, 10 * 60e3); // periodic resubscribe keeps the feed alive
-    });
-    ws.on('message', (buf) => {
-      kick();
-      let record = null;
-      try {
-        record = parseMessage(JSON.parse(buf.toString()), servers);
-      } catch {
-        return; // malformed frame: ignore, never crash the collector
-      }
-      if (record) onRecord(record);
-    });
-    ws.on('close', () => {
-      clearInterval(resub);
-      clearTimeout(watchdog);
-      status[env] = 'reconnecting';
-      setTimeout(open, delay);
-      delay = Math.min(delay * 2, 60e3);
-    });
-    ws.on('error', (err) => console.warn('stream error', env, err.message));
-  };
-  open();
 }

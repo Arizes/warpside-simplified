@@ -1,16 +1,16 @@
-# Warpside: project instructions
+# Warpside Simplified: project instructions
 
-Live PlanetSide 2 leaderboards (Genudine, Ceres) with a rolling 24-hour history. One Node process, no
-database, one runtime dependency. See `README.md` for the architecture.
+Live PlanetSide 2 leaderboards (Genudine, Ceres) with a rolling 24-hour history, on Cloudflare's free tier:
+one Worker plus one Durable Object. See `README.md` for the architecture and `docs/DEPLOY.md` for limits.
 
 ## Scope guard
 
-The project is deliberately small. Do not add a database, queue, build step, framework, accounts, or
-long-term storage without the owner's explicit approval. Anything beyond live leaderboards, player stats and
-24-hour history is out of scope.
+The project is deliberately small. Do not add a database (D1, KV, R2, Postgres), queue, build step, framework,
+accounts, or long-term storage without the owner's explicit approval. Anything beyond live leaderboards,
+player stats and 24-hour history is out of scope.
 
-Ask before: adding a runtime dependency, adding a new external data source or service, changing the CSP or
-other security headers, or increasing request volume to Census.
+Ask before: adding a runtime dependency, adding an external data source or Cloudflare product, adding a second
+Durable Object (it would exceed the free duration budget), changing the CSP, or increasing Census request volume.
 
 ## Rules
 
@@ -20,24 +20,30 @@ other security headers, or increasing request volume to Census.
    edge; never interpolate unvalidated values into a Census URL.
 3. Character, item and outfit IDs are strings (64-bit). Never convert to `number`.
 4. Servers are configuration (`SERVERS` in `src/config.js`); no per-server branches.
-5. The service ID comes from the environment only and is never logged, committed or sent to the browser.
+5. The service ID is a Worker secret (`.dev.vars` locally). Never log it (do not log URLs that contain it),
+   commit it, or send it to the browser.
 6. In the browser, build DOM with `textContent`; no `innerHTML`, `eval` or inline scripts/styles (CSP).
-7. Only Honu (MIT) code may be adapted. Do not copy PS2Alerts (GPL-3.0) or LivePlanetmans (no licence).
-8. Do not bundle extracted game files. Images come from Census image paths.
-9. Comments explain why, not what. No model names or AI attribution in code comments.
-10. Stage files by explicit path; never `git add -A` or `git commit -a`.
+7. Keep `src/` free of Node-only imports (`node:fs` and similar); only `src/tracker.js` may import
+   `cloudflare:workers`.
+8. In the Durable Object, do not use timer callbacks for network I/O (they have no I/O context); drive work
+   from events and the alarm.
+9. Only Honu (MIT) code may be adapted. Do not copy PS2Alerts (GPL-3.0) or LivePlanetmans (no licence).
+10. Do not bundle extracted game files. Images load from Census image paths.
+11. Comments explain why, not what. No model names or AI attribution in code comments.
+12. Stage files by explicit path; never `git add -A` or `git commit -a`.
 
 ## Commands
 
 | Command | |
 |---|---|
-| `npm run dev` | Run with reload (reads `.env`) |
+| `npm run dev` | Local Worker with a real Durable Object (reads `.dev.vars`) |
 | `npm test` | Unit tests (`node --test`, no network) |
-| `npm start` | Production start |
+| `npm run deploy` | Deploy to Cloudflare |
 
-Tests never call the real Census or stream. Behind a proxy, run Node with `NODE_USE_ENV_PROXY=1`.
+Tests never call the real Census or stream.
 
 ## Definition of done
 
-Behaviour is covered by a test, `npm test` passes, `npm audit --omit=dev` is clean, and the README or
-`docs/` are updated if behaviour or setup changed.
+Behaviour is covered by a test, `npm test` passes, `npm audit` is clean, and the README or `docs/` are
+updated if behaviour, limits or setup changed. For changes to `src/tracker.js`, also run `npm run dev`
+and confirm `/health` shows both streams connected and events arriving.

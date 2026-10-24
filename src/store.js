@@ -1,11 +1,11 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 // Event tuple: [tsMs, world, attackerId, victimId, weaponId, flag, attackerTeam, victimTeam]
 // flag: 0 kill, 1 teamkill, 2 suicide / environment. IDs are strings (64-bit in Census).
 export const KILL = 0;
 export const TEAMKILL = 1;
 export const SUICIDE = 2;
+
+// Durable Object storage values are limited to 2 MB, so a snapshot is split into chunks.
+export const CHUNK_BYTES = 1_500_000;
 
 /** The whole mutable state: a rolling event log plus small lookup caches. */
 export function createState() {
@@ -46,20 +46,31 @@ export function firstIndexSince(events, since) {
   return lo;
 }
 
-export function loadState(file) {
-  const state = createState();
-  try {
-    Object.assign(state, JSON.parse(fs.readFileSync(file, 'utf8')));
-  } catch (err) {
-    if (err.code !== 'ENOENT') console.warn('state file unreadable, starting empty:', err.message);
-  }
-  return state;
+async function pipe(bytes, stream) {
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
 }
 
-/** Atomic write: temp file then rename, so a crash never leaves a half-written file. */
-export async function saveState(file, state) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(state));
-  await fs.promises.rename(tmp, file);
+/** Serialises and gzips the state, returning chunks small enough for Durable Object storage. */
+export async function packState(state) {
+  const gz = await pipe(new TextEncoder().encode(JSON.stringify(state)), new CompressionStream('gzip'));
+  const chunks = [];
+  for (let i = 0; i < gz.length; i += CHUNK_BYTES) chunks.push(gz.slice(i, i + CHUNK_BYTES));
+  return chunks;
+}
+
+/** Inverse of packState. Returns a plain state object, or null if the chunks are unusable. */
+export async function unpackState(chunks) {
+  try {
+    const gz = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let at = 0;
+    for (const c of chunks) {
+      gz.set(c, at);
+      at += c.length;
+    }
+    const parsed = JSON.parse(new TextDecoder().decode(await pipe(gz, new DecompressionStream('gzip'))));
+    return Array.isArray(parsed.events) ? { ...createState(), ...parsed } : null;
+  } catch {
+    return null; // corrupt snapshot: start empty rather than crash-loop
+  }
 }

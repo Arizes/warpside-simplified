@@ -1,17 +1,22 @@
 {
-  "name": "warpside",
-  "version": "2.0.0",
-  "description": "Live PlanetSide 2 leaderboards for the PS4 servers, with a rolling 24-hour history",
+  "name": "warpside-simplified",
+  "version": "3.0.0",
+  "description": "Live PlanetSide 2 leaderboards for the PS4 servers, with a rolling 24-hour history, on Cloudflare Workers",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "test": "node --test test/"
   },
-  "dependencies": {
-    "ws": "8.22.0"
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  },
+  "overrides": {
+    "undici": "7.30.1"
   }
 }

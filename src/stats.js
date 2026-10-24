@@ -2,6 +2,10 @@ import { KILL, TEAMKILL, SUICIDE, firstIndexSince } from './store.js';
 
 const HOUR = 3600e3;
 const NSO = 4;
+const IMAGE_PATH = /^\/files\/ps2\/images\/static\/\d+\.png$/;
+
+/** Census image path for an item, or '' unless it has the expected shape (the browser loads it directly). */
+const imageOf = (items, id) => (IMAGE_PATH.test(items[id]?.img || '') ? items[id].img : '');
 
 function topWeapon(counts, items) {
   let best = null;
@@ -13,7 +17,7 @@ function topWeapon(counts, items) {
     }
   }
   if (!best) return null;
-  return { id: best, name: best === '0' ? 'Unknown' : items[best]?.n || `Item ${best}`, kills: bestN };
+  return { id: best, name: best === '0' ? 'Unknown' : items[best]?.n || `Item ${best}`, img: imageOf(items, best), kills: bestN };
 }
 
 const factionOf = (state, id, team) => {
@@ -88,7 +92,7 @@ export function computeStats(state, world, since, now, meta = {}) {
       kpm: Number((p.k / activeMin).toFixed(2)),
       online: Boolean(login),
       weapon: wp?.name || '-',
-      weaponId: wp?.id || '0',
+      weaponImg: wp?.img || '',
       _w: p.w,
     };
   });
@@ -156,7 +160,7 @@ export function computePlayer(state, world, id, since, now) {
   const weapons = Object.keys(w)
     .sort((x, y) => w[y] - w[x])
     .slice(0, 8)
-    .map((wid) => ({ id: wid, name: wid === '0' ? 'Unknown' : state.items[wid]?.n || `Item ${wid}`, kills: w[wid] }));
+    .map((wid) => ({ id: wid, name: wid === '0' ? 'Unknown' : state.items[wid]?.n || `Item ${wid}`, img: imageOf(state.items, wid), kills: w[wid] }));
   return {
     id,
     name: c.n || `#${id}`,

@@ -3,7 +3,7 @@
 const $ = (id) => document.getElementById(id);
 const SVG = 'http://www.w3.org/2000/svg';
 const FACTION = { 1: 'VS', 2: 'NC', 3: 'TR', 4: 'NSO' };
-const POLL_MS = 15000;
+const POLL_MS = 30000; // every poll is a Worker request, and the free plan allows 100k a day
 
 let world = Number(safeGet('world')) || 1000;
 let win = safeGet('window') || '24h';
@@ -33,9 +33,12 @@ const clock = (ms) => {
   const m = Math.floor(ms / 60000);
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 };
-const faction = (f) => el('img', { src: `/img/faction/${f >= 1 && f <= 4 ? f : 4}`, alt: FACTION[f] || '', width: 22, height: 22, loading: 'lazy' });
-function weapon(name, id) {
-  return el('span', { class: 'wep' }, id && id !== '0' ? el('img', { src: `/img/item/${encodeURIComponent(id)}`, alt: '', loading: 'lazy' }) : null, el('span', { text: name }));
+// Images load straight from Census, so they cost this site no requests.
+const CENSUS = 'https://census.daybreakgames.com';
+const EMBLEM = { 1: '94', 2: '12', 3: '18', 4: '93615' };
+const faction = (f) => el('img', { src: `${CENSUS}/files/ps2/images/static/${EMBLEM[f] || EMBLEM[4]}.png`, alt: FACTION[f] || '', width: 22, height: 22, loading: 'lazy' });
+function weapon(name, img) {
+  return el('span', { class: 'wep' }, img ? el('img', { src: CENSUS + img, alt: '', loading: 'lazy' }) : null, el('span', { text: name }));
 }
 
 async function api(path) {
@@ -106,7 +109,7 @@ function renderPlayers() {
         el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null)),
       el('td', { class: 'n', text: num(p.k) }), el('td', { class: 'n', text: num(p.d) }),
       el('td', { class: 'n', text: kdr(p.k, p.d) }), el('td', { class: 'n', text: p.kpm.toFixed(2) }),
-      el('td', {}, weapon(p.weapon, p.weaponId)));
+      el('td', {}, weapon(p.weapon, p.weaponImg)));
     const open = () => openPlayer(p.id);
     tr.addEventListener('click', open);
     tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
@@ -162,7 +165,7 @@ async function openPlayer(id) {
     const tile = (k, l) => el('div', { class: 'tile' }, el('span', { class: 'k', text: k }), el('span', { class: 'l', text: l }));
     $('p-tiles').replaceChildren(tile(num(p.k), 'Kills'), tile(num(p.d), 'Deaths'), tile(kdr(p.k, p.d), 'KDR'), tile(p.br ? `BR ${p.br}` : '–', p.asp ? `ASP ${p.asp}` : 'Rank'));
     drawChart($('p-chart'), p.hourly);
-    $('p-weapons').replaceChildren(...p.weapons.map((w) => el('li', {}, weapon(w.name, w.id), el('span', { text: `${num(w.kills)} kills` }))));
+    $('p-weapons').replaceChildren(...p.weapons.map((w) => el('li', {}, weapon(w.name, w.img), el('span', { text: `${num(w.kills)} kills` }))));
     if (!$('player').open) $('player').showModal();
   } catch { /* player left the window between refreshes: ignore */ }
 }

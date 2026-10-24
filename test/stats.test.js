@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { computePlayer, computeStats } from '../src/stats.js';
-import { createState, firstIndexSince, loadState, prune, saveState } from '../src/store.js';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { CHUNK_BYTES, createState, firstIndexSince, packState, prune, unpackState } from '../src/store.js';
 
 const HOUR = 3600e3;
 const NOW = 1_700_000_000_000;
@@ -64,7 +61,7 @@ test('shorter windows exclude older kills', () => {
 
 test('player detail lists weapons and returns null without activity', () => {
   const p = computePlayer(fixture(), 1000, '1', NOW - 24 * HOUR, NOW);
-  assert.deepEqual(p.weapons, [{ id: '80', name: 'Gauss', kills: 2 }]);
+  assert.deepEqual(p.weapons, [{ id: '80', name: 'Gauss', img: '', kills: 2 }]);
   assert.equal(computePlayer(fixture(), 1000, '999', NOW - 24 * HOUR, NOW), null);
 });
 
@@ -83,11 +80,29 @@ test('firstIndexSince finds the boundary in a sorted log', () => {
   assert.equal(firstIndexSince(ev, 6), 4);
 });
 
-test('state survives a save and load round trip; a missing file is empty', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'warpside-'));
-  const file = path.join(dir, 'nested', 'state.json');
-  assert.equal(loadState(file).events.length, 0);
-  await saveState(file, fixture());
-  assert.equal(loadState(file).events.length, 8);
-  fs.rmSync(dir, { recursive: true });
+test('a packed snapshot round-trips, and corrupt chunks restore as null', async () => {
+  const chunks = await packState(fixture());
+  assert.ok(chunks.every((c) => c.length <= CHUNK_BYTES));
+  const back = await unpackState(chunks);
+  assert.equal(back.events.length, 8);
+  assert.equal(back.chars[1].n, 'Alpha');
+  assert.equal(await unpackState([new Uint8Array([1, 2, 3])]), null);
+});
+
+test('a large state is split into chunks that reassemble exactly', async () => {
+  const s = createState();
+  // random-ish ids so gzip cannot shrink the snapshot below one chunk
+  for (let i = 0; i < 120_000; i++) s.events.push([NOW + i, 1000, String(Math.random()).slice(2), String(Math.random()).slice(2), '80', 0, 1, 2]);
+  const chunks = await packState(s);
+  assert.ok(chunks.length > 1, `expected several chunks, got ${chunks.length}`);
+  assert.equal((await unpackState(chunks)).events.length, 120_000);
+});
+
+test('weapon image paths are only passed on when they look like Census static images', () => {
+  const s = fixture();
+  s.items[80].img = '/files/ps2/images/static/1234.png';
+  s.items[81].img = 'https://evil.example/x.png';
+  const p = computePlayer(s, 1000, '3', NOW - 24 * HOUR, NOW);
+  assert.equal(p.weapons[0].img, '');
+  assert.equal(computePlayer(s, 1000, '1', NOW - 24 * HOUR, NOW).weapons[0].img, '/files/ps2/images/static/1234.png');
 });
