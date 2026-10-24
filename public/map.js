@@ -412,9 +412,9 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
         const t = svgEl('text', { x, y: y + px(major ? 25 : 19), class: major ? 'm-label major' : 'm-label', 'font-size': px(major ? 13 : 11.5), 'stroke-width': px(3.2) }, layer.labels);
         t.textContent = r.n;
       }
-      if (layers.population && fight?.bracket) {
+      if (layers.population && fight?.seenTotal) {
         const ty = y - px(major ? 22 : 17);
-        const label = `${fight.bracket} seen`;
+        const label = `${fight.seenTotal}+ seen`; // a floor, not a range: the real number is unknown
         const w = px(label.length * 6.3 + 10);
         svgEl('rect', { x: x - w / 2, y: ty - px(9), width: w, height: px(15), rx: px(2), class: 'm-pop' }, layer.labels);
         const t = svgEl('text', { x, y: ty + px(2.5), class: 'm-pop-text', 'font-size': px(10.5) }, layer.labels);
@@ -475,9 +475,11 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       }
       rows.push(el('div', { class: 'rc-fight' },
         el('p', { class: 'rc-alert', text: 'Combat detected' }),
-        el('p', { class: 'rc-line' }, el('b', { text: `${fight.bracket || '0'} players seen` }), el('span', { class: 'sub', text: ` · ${fight.kills} kills${fight.flips ? ` · ${fight.flips} flip${fight.flips > 1 ? 's' : ''}` : ''} · last ${minutes(live.now - fight.last)} ago` })),
+        el('p', { class: 'rc-line' }, el('b', { text: `At least ${fight.seenTotal} player${fight.seenTotal === 1 ? '' : 's'} seen` }), el('span', { class: 'sub', text: ` · ${fight.kills} kills${fight.flips ? ` · ${fight.flips} flip${fight.flips > 1 ? 's' : ''}` : ''} · last ${minutes(live.now - fight.last)} ago` })),
         bar,
-        el('p', { class: 'rc-split' }, ...[1, 2, 3].map((fac) => el('span', { class: `c${fac}`, text: `${FTAG[fac]} ${seen[fac]}` })))));
+        el('p', { class: 'rc-split' }, ...[1, 2, 3].map((fac) => el('span', { class: `c${fac}`, text: `${FTAG[fac]} ${seen[fac]}` }))),
+        // Daybreak does not publish base populations; never let the bracket read as the in-game figure
+        fight.bracket ? el('p', { class: 'rc-line sub', text: `Not a population count: the in-game bracket would be ${fight.bracket} or higher.` }) : null));
     } else {
       rows.push(el('p', { class: 'rc-line sub', text: 'No combat detected here in the last 10 minutes.' }));
     }
@@ -490,7 +492,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
         el('span', { class: 'sub', text: `from ${FTAG[c.from] || '?'}` }),
         c.outfit?.tag ? el('span', { class: `c${c.to}`, text: `[${c.outfit.tag}]` }) : null)))
       : el('p', { class: 'rc-line sub', text: 'None in the last hour.' }));
-    rows.push(el('p', { class: 'note small', text: 'Players seen are distinct characters in capture, defend and kill events placed at this base in the last 10 minutes: a lower bound, not a census.' }));
+    rows.push(el('p', { class: 'note small', text: 'Players seen are distinct characters in capture, defend and kill events placed at this base in the last 10 minutes. Players who are only present never appear in Daybreak data, so the real number is usually higher.' }));
     card.replaceChildren(...rows);
     card.hidden = false;
     $('map-card-close').addEventListener('click', () => select(null));
@@ -503,7 +505,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     const o = ownerOf(rid);
     const fight = fightAt(r.fac);
     const lines = [el('b', { text: r.n || 'Territory' }), el('span', { class: `c${o}`, text: `${TYPE[r.t] || 'Facility'} · ${o ? FTAG[o] : 'Unowned'}` })];
-    if (fight) lines.push(el('span', { class: 'm-tip-fight', text: `Combat · ${fight.bracket} players seen` }));
+    if (fight) lines.push(el('span', { class: 'm-tip-fight', text: `Combat · ${fight.seenTotal}+ players seen` }));
     tip.replaceChildren(...lines);
     tip.hidden = false;
     const b = box.getBoundingClientRect();
@@ -551,7 +553,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     $('map-fights').replaceChildren(...(live.fights.length ? live.fights.slice(0, 8).map((f) => {
       const b = el('button', { type: 'button', class: 'fight' },
         el('span', { class: 'fname', text: name(f.fac) }),
-        el('span', { class: 'fmeta', text: `${f.bracket || '?'} seen · ${f.kills} kills${f.flips ? ` · ${f.flips} flip${f.flips > 1 ? 's' : ''}` : ''}` }),
+        el('span', { class: 'fmeta', text: `${f.seenTotal}+ seen · ${f.kills} kills${f.flips ? ` · ${f.flips} flip${f.flips > 1 ? 's' : ''}` : ''}` }),
         bar(f.factions));
       b.addEventListener('click', () => {
         const rid = geo?.byFac[f.fac];

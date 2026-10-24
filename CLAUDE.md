@@ -37,6 +37,9 @@ Durable Object (it would exceed the free duration budget), changing the CSP, or 
     Icons and emblems load from Census image paths.
 11. Comments explain why, not what. No model names or AI attribution in code comments.
 12. Stage files by explicit path; never `git add -A` or `git commit -a`.
+13. Never present data Daybreak does not publish as if it were real. Per-base populations are not published:
+    the map shows distinct players *seen* in events as a floor ("8+ seen"), never as an in-game range such as
+    "24–48". The same applies to fight positions (estimated) and capturing outfits (only flips seen live).
 
 ## Commands
 

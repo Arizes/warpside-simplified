@@ -79,7 +79,8 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   hex grid, lattice, bases, names, battles, players seen). Hex geometry is adapted from Honu (MIT,
   `src/map/LedgerModels.ts`). Clicking a region shows its owner, the outfit that captured it (only for flips seen
   since tracking started), combat in the last 10 minutes and recent captures. Player counts are distinct characters
-  seen in events at that base, shown in the in-game brackets (1–12 … 96+) and labelled as a lower bound.
+  seen in events at that base, shown as a floor ("8+ seen"). Daybreak does not publish per-base populations and
+  players who are only present never appear in its data, so these are never presented as the in-game figures.
 
 Limits, risks and deployment: [`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
 [`docs/research/census-api.md`](docs/research/census-api.md).
