@@ -3,81 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Warpside — PlanetSide 2 Live Leaderboards</title>
-  <meta name="description" content="Live PlanetSide 2 leaderboards for Genudine and Ceres: top players, top outfits and kills per hour over the last 24 hours.">
+  <title>Warpside2 · PlanetSide 2 live leaderboards</title>
+  <meta name="description" content="Live PlanetSide 2 leaderboards for Genudine and Ceres: top players, outfits and weapons by empire over the last 24 hours.">
+  <meta name="theme-color" content="#070b12">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <a class="skip" href="#main">Skip to content</a>
   <div class="bg" aria-hidden="true"></div>
 
   <header class="top">
-    <a class="brand" href="/" aria-label="Warpside home">
-      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M16 2 29 9.5v13L16 30 3 22.5v-13z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11l3.5 10L16 13l3.5 8L23 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-      <span>WARPSIDE</span>
+    <a class="brand" href="/" aria-label="Warpside2 home">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M16 2 29 9.5v13L16 30 3 22.5v-13z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11l3.5 10L16 13l3.5 8L23 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span>WARPSIDE<b>2</b></span>
     </a>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Leaderboards">
+      <button role="tab" id="tab-live" aria-controls="view-live" data-v="live">Live</button>
+      <button role="tab" id="tab-players" aria-controls="view-players" data-v="players">Players</button>
+      <button role="tab" id="tab-outfits" aria-controls="view-outfits" data-v="outfits">Outfits</button>
+      <button role="tab" id="tab-weapons" aria-controls="view-weapons" data-v="weapons">Weapons</button>
+    </nav>
     <div class="controls">
-      <div class="seg" id="world" role="tablist" aria-label="Server"></div>
-      <div class="seg" id="window" role="tablist" aria-label="Time window">
-        <button role="tab" data-v="1h">1H</button>
-        <button role="tab" data-v="6h">6H</button>
-        <button role="tab" data-v="24h" aria-selected="true">24H</button>
+      <div class="seg" id="world" role="group" aria-label="Server"></div>
+      <div class="seg" id="window" role="group" aria-label="Time window">
+        <button type="button" data-v="1h">1H</button>
+        <button type="button" data-v="6h">6H</button>
+        <button type="button" data-v="24h">24H</button>
       </div>
     </div>
-    <div class="pill" id="status"><i></i><span>Connecting…</span></div>
+    <div class="pill" id="status" role="status"><i></i><span>Connecting</span></div>
   </header>
 
-  <main>
-    <section class="hero">
+  <main id="main">
+    <p class="alert" id="alert" role="alert" hidden></p>
+
+    <section class="summary" aria-label="Summary">
       <div>
         <p class="eyebrow" id="server-line">PlanetSide 2 · PS4</p>
-        <h1>Live leaderboards</h1>
-        <p class="lede">Every kill on the PS4 servers, ranked in real time and remembered for 24 hours.</p>
+        <h1 id="view-title">Live leaderboard</h1>
       </div>
-      <div class="tiles">
-        <div class="tile"><span class="k" id="t-kills">–</span><span class="l">Kills</span></div>
-        <div class="tile"><span class="k" id="t-players">–</span><span class="l">Active players</span></div>
-        <div class="tile"><span class="k" id="t-since">–</span><span class="l">Tracked for</span></div>
-      </div>
+      <dl class="tiles">
+        <div class="tile"><dd id="t-kills">–</dd><dt>Kills</dt></div>
+        <div class="tile"><dd id="t-players">–</dd><dt>Active players</dt></div>
+        <div class="tile"><dd id="t-since">–</dd><dt>Tracked for</dt></div>
+      </dl>
     </section>
 
-    <section class="panel">
-      <h2>Faction kills</h2>
-      <div class="factions" id="factions"></div>
-    </section>
+    <div id="view-live" role="tabpanel" aria-labelledby="tab-live">
+      <section class="panel split">
+        <div>
+          <h2>Kills per hour <small id="hourly-note"></small></h2>
+          <div class="chart" id="chart"></div>
+        </div>
+        <div>
+          <h2>Empire share</h2>
+          <div id="factions"></div>
+        </div>
+      </section>
+      <div class="empires" id="empires"></div>
+    </div>
 
-    <section class="panel">
-      <h2>Kills per hour <small id="hourly-note"></small></h2>
-      <div class="chart" id="chart"></div>
-    </section>
+    <div id="view-players" role="tabpanel" aria-labelledby="tab-players" hidden>
+      <section class="panel">
+        <div class="toolbar">
+          <div class="chips" id="players-chips" role="group" aria-label="Empire"></div>
+          <label class="search"><span class="sr">Filter players</span><input id="players-q" type="search" placeholder="Filter by name or outfit" autocomplete="off" maxlength="32"></label>
+        </div>
+        <div class="scroll" id="players-table"></div>
+      </section>
+    </div>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Top players</h2>
-        <label class="search"><span class="sr">Filter players</span><input id="filter" type="search" placeholder="Filter by name or outfit" autocomplete="off" maxlength="32"></label>
-      </div>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>#</th><th>Player</th><th class="n">Kills</th><th class="n">Deaths</th><th class="n">KDR</th><th class="n">KPM</th><th>Top weapon</th></tr></thead>
-          <tbody id="players"></tbody>
-        </table>
-      </div>
-      <p class="empty" id="players-empty" hidden>No kills recorded yet — the collector fills this in as the servers play.</p>
-    </section>
+    <div id="view-outfits" role="tabpanel" aria-labelledby="tab-outfits" hidden>
+      <section class="panel">
+        <div class="toolbar">
+          <div class="chips" id="outfits-chips" role="group" aria-label="Empire"></div>
+          <label class="search"><span class="sr">Filter outfits</span><input id="outfits-q" type="search" placeholder="Filter by tag or name" autocomplete="off" maxlength="32"></label>
+        </div>
+        <div class="scroll" id="outfits-table"></div>
+      </section>
+    </div>
 
-    <section class="panel">
-      <h2>Top outfits</h2>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>#</th><th>Outfit</th><th class="n">Kills</th><th class="n">Deaths</th><th class="n">KDR</th><th class="n">Members</th><th>Top weapon</th></tr></thead>
-          <tbody id="outfits"></tbody>
-        </table>
-      </div>
-      <p class="empty" id="outfits-empty" hidden>Outfits need at least two active members to rank.</p>
-    </section>
+    <div id="view-weapons" role="tabpanel" aria-labelledby="tab-weapons" hidden>
+      <section class="panel">
+        <div class="toolbar">
+          <p class="note">Most-used weapons by kills. Best user is the player with the most kills with that weapon.</p>
+          <label class="search"><span class="sr">Filter weapons</span><input id="weapons-q" type="search" placeholder="Filter weapons" autocomplete="off" maxlength="32"></label>
+        </div>
+        <div class="scroll" id="weapons-table"></div>
+      </section>
+    </div>
   </main>
 
   <dialog id="player" aria-labelledby="p-name">
@@ -85,7 +103,7 @@
       <button class="close" id="p-close" aria-label="Close">×</button>
       <p class="eyebrow" id="p-outfit"></p>
       <h2 id="p-name"></h2>
-      <div class="tiles small" id="p-tiles"></div>
+      <dl class="tiles small" id="p-tiles"></dl>
       <h3>Kills per hour</h3>
       <div class="chart small" id="p-chart"></div>
       <h3>Top weapons</h3>
@@ -94,7 +112,7 @@
   </dialog>
 
   <footer>
-    <p>Data from the Daybreak Census API and event stream. Warpside is a fan project, not affiliated with or endorsed by Daybreak Games. PlanetSide is a trademark of Daybreak Games Company LLC.</p>
+    <p>Data from the Daybreak Census API and event stream, counted from kills seen since the tracker started. Warpside2 is a fan project, not affiliated with or endorsed by Daybreak Games. PlanetSide is a trademark of Daybreak Games Company LLC.</p>
   </footer>
 
   <script src="/app.js" type="module"></script>

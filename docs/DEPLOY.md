@@ -57,3 +57,13 @@ CDN serves them, or move to the Workers Paid plan ($5/month).
   object.
 - **Fallback:** the first commit in the history is a plain Node version of this app (one process plus a JSON
   file) that runs on any small VPS with a persistent disk.
+
+## Shared quota: use a dedicated Cloudflare account
+
+Free-plan limits are counted **per Cloudflare account**, not per Worker or project. Every Worker on the
+account shares the 100,000 daily requests, and every Durable Object shares the 13,000 GB-s/day of duration.
+Warpside's always-on collector alone uses about 85% of the duration limit, so deploy it only to an account
+that hosts nothing else. A busy neighbour could stop the collector, and the collector would crowd out the
+neighbour. If a dedicated free account is not an option, the Workers Paid plan ($5/month) lifts these caps
+(one always-on object stays inside its included 400,000 GB-s/month), or run the Node version from the first
+commit on a small VPS behind Cloudflare's proxy.

@@ -1,7 +1,10 @@
-{
-  "name": "warpside-simplified",
+﻿{
+  "name": "warpside2",
   "main": "src/worker.js",
   "compatibility_date": "2026-09-01",
+  // Not deployed yet. Deploy only to a Cloudflare account dedicated to this project: free-plan
+  // quotas are per account. Then add: "workers_dev": false and
+  // "routes": [{ "pattern": "warpside2.com", "custom_domain": true }]
   "assets": {
     "directory": "./public",
     "run_worker_first": ["/api/*", "/health"]

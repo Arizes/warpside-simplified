@@ -107,11 +107,34 @@ export function computeStats(state, world, since, now, meta = {}) {
     for (const id of Object.keys(p._w)) o.w[id] = (o.w[id] || 0) + p._w[id];
   }
 
-  const outfitRows = Object.values(outfits)
+  const allOutfits = Object.values(outfits)
     .filter((o) => o.members >= 2)
     .map((o) => ({ tag: o.tag, name: o.name, faction: o.faction, k: o.k, d: o.d, members: o.members, weapon: topWeapon(o.w, state.items)?.name || '-' }))
+    .sort((a, b) => b.k - a.k);
+
+  // Weapon board: total kills, how many players used it, and its best user.
+  const weaponBoard = {};
+  for (const p of rows) {
+    for (const id of Object.keys(p._w)) {
+      if (id === '0') continue; // kills with no weapon attributed
+      const w = (weaponBoard[id] ||= { id, k: 0, users: 0, top: '', topK: 0 });
+      w.k += p._w[id];
+      w.users++;
+      if (p._w[id] > w.topK) {
+        w.topK = p._w[id];
+        w.top = p.name;
+      }
+    }
+  }
+  const weapons = Object.values(weaponBoard)
     .sort((a, b) => b.k - a.k)
-    .slice(0, 50);
+    .slice(0, 40)
+    .map((w) => ({ id: w.id, name: state.items[w.id]?.n || `Item ${w.id}`, img: imageOf(state.items, w.id), kills: w.k, users: w.users, top: w.top, topKills: w.topK }));
+
+  const ranked = rows.filter((p) => p.k > 0).sort((a, b) => b.k - a.k);
+  const byFaction = Object.fromEntries(
+    [1, 2, 3].map((f) => [f, { players: ranked.filter((p) => p.faction === f).slice(0, 50), outfits: allOutfits.filter((o) => o.faction === f).slice(0, 25) }]),
+  );
 
   const factions = [1, 2, 3].map((f) => {
     let k = 0;
@@ -127,8 +150,11 @@ export function computeStats(state, world, since, now, meta = {}) {
     since,
     now,
     events: count,
-    players: rows.filter((p) => p.k > 0).sort((a, b) => b.k - a.k).slice(0, 100),
-    outfits: outfitRows,
+    players: ranked.slice(0, 100),
+    outfits: allOutfits.slice(0, 50),
+    byFaction,
+    weapons,
+    activePlayers: ranked.length,
     factions,
     hourly: hourly(events, since, now, hours, (e) => e[1] === world),
     ...meta,

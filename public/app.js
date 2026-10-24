@@ -2,12 +2,23 @@
 // so nodes are built with textContent only: no innerHTML anywhere.
 const $ = (id) => document.getElementById(id);
 const SVG = 'http://www.w3.org/2000/svg';
-const FACTION = { 1: 'VS', 2: 'NC', 3: 'TR', 4: 'NSO' };
+const CENSUS = 'https://census.daybreakgames.com'; // images load straight from Census
+const EMBLEM = { 1: '94', 2: '12', 3: '18', 4: '93615' };
+const TAG = { 1: 'VS', 2: 'NC', 3: 'TR', 4: 'NSO' };
+const EMPIRE = { 1: 'Vanu Sovereignty', 2: 'New Conglomerate', 3: 'Terran Republic' };
+const TABS = ['live', 'players', 'outfits', 'weapons'];
+const TITLES = { live: 'Live leaderboard', players: 'Top players', outfits: 'Top outfits', weapons: 'Top weapons' };
 const POLL_MS = 30000; // every poll is a Worker request, and the free plan allows 100k a day
 
-let world = Number(safeGet('world')) || 1000;
-let win = safeGet('window') || '24h';
-let rows = [];
+const view = {
+  tab: 'live',
+  world: Number(safeGet('world')) || 1000,
+  win: safeGet('window') || '24h',
+  data: null,
+  players: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
+  outfits: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
+  weapons: { q: '', sort: { key: 'kills', dir: -1 } },
+};
 let timer;
 
 function safeGet(k) {
@@ -28,18 +39,14 @@ function el(tag, props = {}, ...kids) {
   return n;
 }
 const num = (n) => Number(n).toLocaleString('en-US');
-const kdr = (k, d) => (d ? (k / d).toFixed(2) : k.toFixed(2));
+const kd = (r) => (r.d ? r.k / r.d : r.k);
+const kdText = (r) => kd(r).toFixed(2);
 const clock = (ms) => {
-  const m = Math.floor(ms / 60000);
+  const m = Math.max(0, Math.floor(ms / 60000));
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 };
-// Images load straight from Census, so they cost this site no requests.
-const CENSUS = 'https://census.daybreakgames.com';
-const EMBLEM = { 1: '94', 2: '12', 3: '18', 4: '93615' };
-const faction = (f) => el('img', { src: `${CENSUS}/files/ps2/images/static/${EMBLEM[f] || EMBLEM[4]}.png`, alt: FACTION[f] || '', width: 22, height: 22, loading: 'lazy' });
-function weapon(name, img) {
-  return el('span', { class: 'wep' }, img ? el('img', { src: CENSUS + img, alt: '', loading: 'lazy' }) : null, el('span', { text: name }));
-}
+const emblem = (f, size = 22) => el('img', { src: `${CENSUS}/files/ps2/images/static/${EMBLEM[f] || EMBLEM[4]}.png`, alt: TAG[f] || '', width: size, height: size, loading: 'lazy' });
+const weaponCell = (name, img) => el('span', { class: 'wep' }, img ? el('img', { src: CENSUS + img, alt: '', loading: 'lazy' }) : null, el('span', { text: name }));
 
 async function api(path) {
   const r = await fetch(path, { cache: 'no-store' });
@@ -47,9 +54,174 @@ async function api(path) {
   return r.json();
 }
 
-/** Bar chart of kills per hour as inline SVG. */
+/* ---------- generic sortable table ---------- */
+function buildTable({ cols, rows, sort, onSort, onRow, empty }) {
+  if (!rows.length) return el('p', { class: 'empty', text: empty });
+  const head = el('tr', {}, ...cols.map((c) => {
+    const th = el('th', { scope: 'col', class: c.n ? 'n' : '' });
+    if (c.sort && onSort) {
+      th.setAttribute('aria-sort', sort.key === c.sort ? (sort.dir < 0 ? 'descending' : 'ascending') : 'none');
+      const b = el('button', { type: 'button', class: 'sortbtn', text: c.label });
+      b.addEventListener('click', () => onSort(c.sort));
+      th.append(b);
+    } else {
+      th.textContent = c.label;
+    }
+    return th;
+  }));
+  const body = rows.map((r, i) => {
+    const tr = el('tr', onRow ? { tabindex: '0' } : {}, ...cols.map((c) => el('td', { class: c.n ? 'n' : c.cls || '' }, c.cell(r, i))));
+    if (onRow) {
+      tr.addEventListener('click', () => onRow(r));
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRow(r); } });
+    }
+    return tr;
+  });
+  return el('table', {}, el('thead', {}, head), el('tbody', {}, ...body));
+}
+
+const SORTERS = { k: (r) => r.k, d: (r) => r.d, kd, kpm: (r) => r.kpm, members: (r) => r.members, perMember: (r) => r.k / r.members, kills: (r) => r.kills, users: (r) => r.users };
+function sorted(rows, sort) {
+  const get = SORTERS[sort.key] || SORTERS.k;
+  return [...rows].sort((a, b) => (get(b) - get(a)) * -sort.dir);
+}
+function toggleSort(state, key, rerender) {
+  state.sort = state.sort.key === key ? { key, dir: -state.sort.dir } : { key, dir: -1 };
+  rerender();
+}
+
+const who = (p) => el('span', { class: 'who' }, emblem(p.faction), p.online ? el('span', { class: 'on', title: 'Online' }) : null,
+  el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null);
+const outfitCell = (o) => el('span', { class: 'who' }, emblem(o.faction), el('span', { class: `c${o.faction}`, text: o.tag ? `[${o.tag}] ${o.name}` : o.name }));
+
+/* ---------- live tab: three empire columns ---------- */
+function miniPlayers(list) {
+  return buildTable({
+    cols: [
+      { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
+      { label: 'Player', cell: (p) => el('span', { class: 'who' }, p.online ? el('span', { class: 'on', title: 'Online' }) : null, el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null) },
+      { label: 'Kills', n: true, cell: (p) => num(p.k) },
+      { label: 'KPM', n: true, cell: (p) => p.kpm.toFixed(2) },
+      { label: 'Deaths', n: true, cell: (p) => num(p.d) },
+      { label: 'K/D', n: true, cell: kdText },
+    ],
+    rows: list,
+    onRow: (p) => openPlayer(p.id),
+    empty: 'No kills recorded for this empire yet.',
+  });
+}
+function miniOutfits(list) {
+  return buildTable({
+    cols: [
+      { label: 'Outfit', cell: (o) => el('span', { class: `c${o.faction}`, text: o.tag ? `[${o.tag}] ${o.name}` : o.name }) },
+      { label: 'Kills', n: true, cell: (o) => num(o.k) },
+      { label: 'Deaths', n: true, cell: (o) => num(o.d) },
+      { label: 'K/D', n: true, cell: kdText },
+      { label: 'Members', n: true, cell: (o) => String(o.members) },
+    ],
+    rows: list,
+    empty: 'Outfits need two active members to rank.',
+  });
+}
+function renderLive(s = view.data) {
+  const total = s.factions.reduce((a, f) => a + f.k, 0);
+  $('empires').replaceChildren(...[1, 2, 3].map((f) => {
+    const tot = s.factions.find((x) => x.f === f);
+    const share = total ? ((tot.k / total) * 100).toFixed(1) : '0.0';
+    const top = s.byFaction[f].players.slice(0, 10);
+    return el('section', { class: `empire f${f}`, 'aria-label': EMPIRE[f] },
+      el('header', { class: 'ehead' }, emblem(f, 30), el('h2', { text: EMPIRE[f] }), el('span', { class: 'share', text: `${share}%` })),
+      el('h3', { text: 'Top players' }),
+      el('div', { class: 'scroll' }, miniPlayers(top)),
+      el('p', { class: 'totals' }, el('span', { text: 'Empire total' }), el('span', { text: `${num(tot.k)} kills` }), el('span', { text: `${num(tot.d)} deaths` }), el('span', { text: `K/D ${kdText(tot)}` })),
+      el('h3', { text: 'Top outfits' }),
+      el('div', { class: 'scroll' }, miniOutfits(s.byFaction[f].outfits.slice(0, 5))));
+  }));
+  const bar = el('div', { class: 'fbar' });
+  for (const f of s.factions) {
+    const pct = total ? (f.k / total) * 100 : 33.3;
+    const seg = el('div', { class: `f${f.f}`, text: total ? `${Math.round(pct)}%` : '' });
+    seg.style.flexGrow = String(Math.max(pct, 0.5));
+    bar.append(seg);
+  }
+  $('factions').replaceChildren(bar, el('div', { class: 'flegend' }, ...s.factions.map((f) =>
+    el('span', {}, emblem(f.f), el('b', { class: `c${f.f}`, text: TAG[f.f] }), `${num(f.k)} kills`))));
+  drawChart($('chart'), s.hourly);
+}
+
+/* ---------- players / outfits / weapons tabs ---------- */
+function chips(container, state, rerender) {
+  const items = [[0, 'All empires'], [1, 'VS'], [2, 'NC'], [3, 'TR']];
+  container.replaceChildren(...items.map(([f, label]) => {
+    const b = el('button', { type: 'button', class: `chip${f ? ` f${f}` : ''}`, text: label, 'aria-pressed': String(state.empire === f) });
+    b.addEventListener('click', () => { state.empire = f; rerender(); });
+    return b;
+  }));
+}
+function renderPlayers() {
+  const s = view.data;
+  const st = view.players;
+  chips($('players-chips'), st, renderPlayers);
+  const q = st.q.toLowerCase();
+  const base = st.empire ? s.byFaction[st.empire].players : s.players;
+  const rows = sorted(base.filter((p) => !q || p.name.toLowerCase().includes(q) || p.tag.toLowerCase().includes(q) || p.outfit.toLowerCase().includes(q)), st.sort);
+  $('players-table').replaceChildren(buildTable({
+    cols: [
+      { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
+      { label: 'Player', cell: who },
+      { label: 'Kills', n: true, sort: 'k', cell: (p) => num(p.k) },
+      { label: 'Deaths', n: true, sort: 'd', cell: (p) => num(p.d) },
+      { label: 'K/D', n: true, sort: 'kd', cell: kdText },
+      { label: 'KPM', n: true, sort: 'kpm', cell: (p) => p.kpm.toFixed(2) },
+      { label: 'Top weapon', cell: (p) => weaponCell(p.weapon, p.weaponImg) },
+    ],
+    rows, sort: st.sort, onSort: (k) => toggleSort(st, k, renderPlayers), onRow: (p) => openPlayer(p.id),
+    empty: q ? 'No players match that filter.' : 'No kills recorded yet. The board fills in as the servers play.',
+  }));
+}
+function renderOutfits() {
+  const s = view.data;
+  const st = view.outfits;
+  chips($('outfits-chips'), st, renderOutfits);
+  const q = st.q.toLowerCase();
+  const base = st.empire ? s.byFaction[st.empire].outfits : s.outfits;
+  const rows = sorted(base.filter((o) => !q || o.name.toLowerCase().includes(q) || o.tag.toLowerCase().includes(q)), st.sort);
+  $('outfits-table').replaceChildren(buildTable({
+    cols: [
+      { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
+      { label: 'Outfit', cell: outfitCell },
+      { label: 'Kills', n: true, sort: 'k', cell: (o) => num(o.k) },
+      { label: 'Deaths', n: true, sort: 'd', cell: (o) => num(o.d) },
+      { label: 'K/D', n: true, sort: 'kd', cell: kdText },
+      { label: 'Members', n: true, sort: 'members', cell: (o) => String(o.members) },
+      { label: 'Kills / member', n: true, sort: 'perMember', cell: (o) => (o.k / o.members).toFixed(1) },
+    ],
+    rows, sort: st.sort, onSort: (k) => toggleSort(st, k, renderOutfits),
+    empty: q ? 'No outfits match that filter.' : 'Outfits need at least two active members to rank.',
+  }));
+}
+function renderWeapons() {
+  const st = view.weapons;
+  const q = st.q.toLowerCase();
+  const rows = sorted(view.data.weapons.filter((w) => !q || w.name.toLowerCase().includes(q)), st.sort);
+  $('weapons-table').replaceChildren(buildTable({
+    cols: [
+      { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
+      { label: 'Weapon', cell: (w) => weaponCell(w.name, w.img) },
+      { label: 'Kills', n: true, sort: 'kills', cell: (w) => num(w.kills) },
+      { label: 'Players', n: true, sort: 'users', cell: (w) => num(w.users) },
+      { label: 'Best user', cell: (w) => el('span', {}, w.top, el('span', { class: 'sub', text: ` · ${num(w.topKills)}` })) },
+    ],
+    rows, sort: st.sort, onSort: (k) => toggleSort(st, k, renderWeapons),
+    empty: q ? 'No weapons match that filter.' : 'No weapon kills recorded yet.',
+  }));
+}
+
+const RENDER = { live: renderLive, players: renderPlayers, outfits: renderOutfits, weapons: renderWeapons };
+
+/* ---------- chart ---------- */
 function drawChart(target, buckets) {
-  const W = 720, H = 150, pad = 18;
+  const W = 720, H = target.classList.contains('small') ? 90 : 150, pad = 18;
   const max = Math.max(1, ...buckets.map((b) => b.kills));
   const bw = W / buckets.length;
   const svg = document.createElementNS(SVG, 'svg');
@@ -85,116 +257,110 @@ function drawChart(target, buckets) {
   target.replaceChildren(svg);
 }
 
-function renderFactions(list) {
-  const total = list.reduce((s, f) => s + f.k, 0);
-  const bar = el('div', { class: 'fbar' });
-  for (const f of list) {
-    const pct = total ? (f.k / total) * 100 : 33.3;
-    const seg = el('div', { class: `f${f.f}`, text: total ? `${Math.round(pct)}%` : '' });
-    seg.style.flexGrow = String(Math.max(pct, 0.5));
-    bar.append(seg);
-  }
-  const legend = el('div', { class: 'flegend' }, ...list.map((f) =>
-    el('span', {}, faction(f.f), el('b', { class: `c${f.f}`, text: FACTION[f.f] }), `${num(f.k)} kills · ${num(f.d)} deaths`)));
-  $('factions').replaceChildren(bar, legend);
-}
-
-function renderPlayers() {
-  const q = $('filter').value.trim().toLowerCase();
-  const shown = rows.filter((p) => !q || p.name.toLowerCase().includes(q) || p.tag.toLowerCase().includes(q) || p.outfit.toLowerCase().includes(q));
-  $('players').replaceChildren(...shown.map((p) => {
-    const tr = el('tr', { tabindex: '0', 'aria-label': `Open ${p.name}` },
-      el('td', { class: 'rank', text: String(rows.indexOf(p) + 1) }),
-      el('td', {}, el('span', { class: 'who' }, faction(p.faction), p.online ? el('span', { class: 'on', title: 'Online' }) : null,
-        el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null)),
-      el('td', { class: 'n', text: num(p.k) }), el('td', { class: 'n', text: num(p.d) }),
-      el('td', { class: 'n', text: kdr(p.k, p.d) }), el('td', { class: 'n', text: p.kpm.toFixed(2) }),
-      el('td', {}, weapon(p.weapon, p.weaponImg)));
-    const open = () => openPlayer(p.id);
-    tr.addEventListener('click', open);
-    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-    return tr;
-  }));
-  $('players-empty').hidden = shown.length > 0;
-}
-
-function render(s) {
-  rows = s.players;
-  $('server-line').textContent = `${s.server} · last ${win.toUpperCase()}`;
+/* ---------- shell: data, tabs, controls ---------- */
+function renderSummary(s) {
+  $('server-line').textContent = `${s.server} · last ${view.win.toUpperCase()}`;
   $('t-kills').textContent = num(s.factions.reduce((a, f) => a + f.k, 0));
-  $('t-players').textContent = num(s.players.length);
+  $('t-players').textContent = num(s.activePlayers);
   $('t-since').textContent = clock(s.now - Math.max(s.trackedSince, s.since));
   $('hourly-note').textContent = `last ${s.hourly.length} h`;
-  renderFactions(s.factions);
-  drawChart($('chart'), s.hourly);
-  renderPlayers();
-  $('outfits').replaceChildren(...s.outfits.map((o, i) => el('tr', {},
-    el('td', { class: 'rank', text: String(i + 1) }),
-    el('td', {}, el('span', { class: 'who' }, faction(o.faction), el('span', { class: `c${o.faction}`, text: o.tag ? `[${o.tag}] ${o.name}` : o.name }))),
-    el('td', { class: 'n', text: num(o.k) }), el('td', { class: 'n', text: num(o.d) }),
-    el('td', { class: 'n', text: kdr(o.k, o.d) }), el('td', { class: 'n', text: String(o.members) }),
-    el('td', {}, weapon(o.weapon, null)))));
-  $('outfits-empty').hidden = s.outfits.length > 0;
-
-  const pill = $('status');
   const live = s.stream === 'connected' && s.feedOnline !== false;
-  pill.className = `pill ${live ? 'live' : 'down'}`;
-  pill.lastElementChild.textContent = live ? 'Live' : s.stream === 'connected' ? 'Daybreak feed offline' : 'Reconnecting…';
+  $('status').className = `pill ${live ? 'live' : 'down'}`;
+  $('status').lastElementChild.textContent = live ? 'Live' : s.stream === 'connected' ? 'Daybreak feed offline' : 'Reconnecting';
 }
-
-async function load() {
-  try {
-    render(await api(`/api/stats?world=${world}&window=${win}`));
-  } catch {
-    const pill = $('status');
-    pill.className = 'pill down';
-    pill.lastElementChild.textContent = 'Tracker unreachable';
+function show(tab) {
+  view.tab = TABS.includes(tab) ? tab : 'live';
+  for (const t of TABS) {
+    $(`view-${t}`).hidden = t !== view.tab;
+    const b = $(`tab-${t}`);
+    b.setAttribute('aria-selected', String(t === view.tab));
+    b.tabIndex = t === view.tab ? 0 : -1;
   }
+  $('view-title').textContent = TITLES[view.tab];
+  document.body.dataset.tab = view.tab;
+  if (view.data) RENDER[view.tab]();
 }
-function schedule() {
-  clearInterval(timer);
-  timer = setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
+function setAlert(msg) {
+  $('alert').hidden = !msg;
+  $('alert').textContent = msg || '';
+}
+async function load() {
+  let data;
+  try {
+    data = await api(`/api/stats?world=${view.world}&window=${view.win}`);
+  } catch {
+    $('status').className = 'pill down';
+    $('status').lastElementChild.textContent = 'Tracker unreachable';
+    setAlert(view.data ? 'Could not refresh. Showing the last data received; retrying every 30 seconds.' : 'Could not reach the tracker. Retrying every 30 seconds.');
+    return;
+  }
+  view.data = data;
+  setAlert('');
+  document.body.classList.remove('loading');
+  try {
+    renderSummary(data);
+    RENDER[view.tab]();
+  } catch (err) {
+    console.error('render failed', err); // a bug in this page, not a network problem
+    setAlert('Something went wrong showing this data. Reload the page.');
+  }
 }
 
 async function openPlayer(id) {
   try {
-    const p = await api(`/api/player?world=${world}&window=${win}&id=${encodeURIComponent(id)}`);
+    const p = await api(`/api/player?world=${view.world}&window=${view.win}&id=${encodeURIComponent(id)}`);
     $('p-outfit').textContent = p.outfit ? `${p.tag ? `[${p.tag}] ` : ''}${p.outfit}` : 'No outfit';
     $('p-name').textContent = p.name;
     $('p-name').className = `c${p.faction}`;
-    const tile = (k, l) => el('div', { class: 'tile' }, el('span', { class: 'k', text: k }), el('span', { class: 'l', text: l }));
-    $('p-tiles').replaceChildren(tile(num(p.k), 'Kills'), tile(num(p.d), 'Deaths'), tile(kdr(p.k, p.d), 'KDR'), tile(p.br ? `BR ${p.br}` : '–', p.asp ? `ASP ${p.asp}` : 'Rank'));
+    const tile = (k, l) => el('div', { class: 'tile' }, el('dd', { text: k }), el('dt', { text: l }));
+    $('p-tiles').replaceChildren(tile(num(p.k), 'Kills'), tile(num(p.d), 'Deaths'), tile(kdText(p), 'K/D'), tile(p.br ? `BR ${p.br}` : '–', p.asp ? `ASP ${p.asp}` : 'Rank'));
     drawChart($('p-chart'), p.hourly);
-    $('p-weapons').replaceChildren(...p.weapons.map((w) => el('li', {}, weapon(w.name, w.img), el('span', { text: `${num(w.kills)} kills` }))));
+    $('p-weapons').replaceChildren(...p.weapons.map((w) => el('li', {}, weaponCell(w.name, w.img), el('span', { text: `${num(w.kills)} kills` }))));
     if (!$('player').open) $('player').showModal();
   } catch { /* player left the window between refreshes: ignore */ }
 }
 
-function tabs(container, current, onPick) {
+function segment(container, current, onPick) {
   const buttons = [...container.querySelectorAll('button')];
-  for (const b of buttons) {
-    b.setAttribute('aria-selected', String(b.dataset.v === String(current)));
-    b.addEventListener('click', () => {
-      buttons.forEach((x) => x.setAttribute('aria-selected', String(x === b)));
-      onPick(b.dataset.v);
-    });
-  }
+  const mark = (value) => buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(value))));
+  mark(current);
+  for (const b of buttons) b.addEventListener('click', () => { mark(b.dataset.v); onPick(b.dataset.v); });
 }
 
 async function init() {
+  document.body.classList.add('loading');
   try {
     const servers = await api('/api/servers');
-    if (!servers.some((s) => s.id === world)) world = servers[0].id;
-    $('world').replaceChildren(...servers.map((s) => el('button', { role: 'tab', 'data-v': String(s.id), title: s.region, text: s.name })));
+    if (!servers.some((s) => s.id === view.world)) view.world = servers[0].id;
+    $('world').replaceChildren(...servers.map((s) => el('button', { type: 'button', 'data-v': String(s.id), title: s.region, text: s.name })));
   } catch { /* the stats call below reports the outage */ }
-  tabs($('world'), world, (v) => { world = Number(v); safeSet('world', v); load(); });
-  if (!['1h', '6h', '24h'].includes(win)) win = '24h';
-  tabs($('window'), win, (v) => { win = v; safeSet('window', v); load(); });
-  $('filter').addEventListener('input', renderPlayers);
+  segment($('world'), view.world, (v) => { view.world = Number(v); safeSet('world', v); load(); });
+  if (!['1h', '6h', '24h'].includes(view.win)) view.win = '24h';
+  segment($('window'), view.win, (v) => { view.win = v; safeSet('window', v); load(); });
+
+  // Tabs: click or arrow keys; the hash makes a tab linkable and keeps back/forward working.
+  const tabs = TABS.map((t) => $(`tab-${t}`));
+  tabs.forEach((b, i) => {
+    b.addEventListener('click', () => { location.hash = b.dataset.v; });
+    b.addEventListener('keydown', (e) => {
+      const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      tabs[(next + tabs.length) % tabs.length].focus();
+      location.hash = TABS[(next + tabs.length) % tabs.length];
+    });
+  });
+  window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+
+  for (const key of ['players', 'outfits', 'weapons']) {
+    $(`${key}-q`).addEventListener('input', (e) => { view[key].q = e.target.value.trim(); RENDER[key](); });
+  }
   $('p-close').addEventListener('click', () => $('player').close());
   $('player').addEventListener('click', (e) => { if (e.target === $('player')) $('player').close(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
   await load();
-  schedule();
+  clearInterval(timer);
+  timer = setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
 }
 init();

@@ -106,3 +106,20 @@ test('weapon image paths are only passed on when they look like Census static im
   assert.equal(p.weapons[0].img, '');
   assert.equal(computePlayer(s, 1000, '1', NOW - 24 * HOUR, NOW).weapons[0].img, '/files/ps2/images/static/1234.png');
 });
+
+test('per-empire boards rank each faction separately', () => {
+  const r = computeStats(fixture(), 1000, NOW - 24 * HOUR, NOW);
+  assert.deepEqual(r.byFaction[1].players.map((p) => p.id), ['1']);
+  assert.deepEqual(r.byFaction[2].players.map((p) => p.id), ['2']);
+  assert.deepEqual(r.byFaction[3].players.map((p) => p.id), ['3']);
+  assert.equal(r.byFaction[1].outfits.length, 1); // the shared outfit belongs to its first-ranked member
+  assert.equal(r.activePlayers, 3);
+});
+
+test('weapon board totals kills, counts users and names the best user', () => {
+  const r = computeStats(fixture(), 1000, NOW - 24 * HOUR, NOW);
+  const gauss = r.weapons.find((w) => w.name === 'Gauss');
+  assert.deepEqual([gauss.kills, gauss.users, gauss.top, gauss.topKills], [2, 1, 'Alpha', 2]);
+  assert.ok(!r.weapons.some((w) => w.id === '0'));
+  assert.equal(r.weapons[0].kills >= r.weapons.at(-1).kills, true);
+});
