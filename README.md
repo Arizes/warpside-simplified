@@ -75,6 +75,11 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   owner). Ownership is polled every 2 minutes and updated live from `FacilityControl`. Fights are estimated:
   kills only carry a continent, so they are placed at bases where a participant was seen capturing or
   defending in the last 15 minutes.
+- **Map details:** styled after the in-game map, with toggles inspired by Honu (terrain, territory, region borders,
+  hex grid, lattice, bases, names, battles, players seen). Hex geometry is adapted from Honu (MIT,
+  `src/map/LedgerModels.ts`). Clicking a region shows its owner, the outfit that captured it (only for flips seen
+  since tracking started), combat in the last 10 minutes and recent captures. Player counts are distinct characters
+  seen in events at that base, shown in the in-game brackets (1–12 … 96+) and labelled as a lower bound.
 
 Limits, risks and deployment: [`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
 [`docs/research/census-api.md`](docs/research/census-api.md).

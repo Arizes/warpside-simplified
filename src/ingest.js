@@ -31,6 +31,7 @@ export function applyRecord(state, lookups, feed, r, map = null, regionOf = () =
       return false;
     case 'control':
       if (map) noteControl(map, r, regionOf(r.world, r.zone, r.fac));
+      if (r.outfit && r.from !== r.to) lookups.requestOutfit?.(r.world, r.outfit);
       return false;
     default:
       return false;

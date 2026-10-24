@@ -15,6 +15,7 @@ export function createState() {
     online: {}, // characterId -> login ts
     chars: {}, // characterId -> { n, f, br, p, oid, tag, on }
     items: {}, // itemId -> { n, img }
+    outfits: {}, // outfitId -> { tag, name } (for base captures on the map)
   };
 }
 
@@ -33,6 +34,7 @@ export function prune(state, now, retainMs) {
   for (const id of Object.keys(state.chars)) if (!used.has(id)) delete state.chars[id];
   const weapons = new Set(state.events.map((e) => e[4]));
   for (const id of Object.keys(state.items)) if (!weapons.has(id)) delete state.items[id];
+  if (Object.keys(state.outfits || {}).length > 3000) state.outfits = {}; // a cache: refilled on demand
 }
 
 /** Index of the first event at or after `since` (events are time-ordered). */

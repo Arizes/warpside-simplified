@@ -3,7 +3,7 @@ import { createApi } from './api.js';
 import { createLookups, fetchOwnership, fetchZoneStatic } from './census.js';
 import { SERVERS, loadConfig, worldsByEnv } from './config.js';
 import { applyRecord } from './ingest.js';
-import { ZONE_IDS, createMapState, pruneMap } from './map.js';
+import { ZONE_IDS, createMapState, mapSnapshot, pruneMap, restoreMap } from './map.js';
 import { createState, packState, prune, unpackState } from './store.js';
 import { parseMessage, streamUrl, subscribeMessages } from './stream.js';
 
@@ -14,6 +14,7 @@ const STALE_MS = 90_000; // heartbeats arrive every ~30 s; silence means the soc
 const RESUBSCRIBE_MS = 10 * 60_000;
 const SNAP_KEY = 'snap:';
 const STATIC_KEY = 'static:';
+const MAP_KEY = 'map';
 const OWNERSHIP_EVERY = 4; // ticks between map ownership polls (2 minutes; FacilityControl fills the gaps)
 
 /**
@@ -48,6 +49,7 @@ export class Tracker extends DurableObject {
       status: this.status,
       feed: this.feed,
       map: this.map,
+      requestOutfit: (world, id) => this.lookups.requestOutfit(world, id), // names lost in a restart refill on demand
       statics: {
         loaded: (world) => Object.fromEntries(ZONE_IDS.map((z) => [z, this.statics[`${SERVERS[world].ns}:${z}`]]).filter(([, g]) => g)),
         get: (world, zone) => this.getStatic(SERVERS[world].ns, zone),
@@ -59,6 +61,8 @@ export class Tracker extends DurableObject {
   }
 
   async restore() {
+    restoreMap(this.map, await this.ctx.storage.get(MAP_KEY));
+    pruneMap(this.map, Date.now());
     const count = await this.ctx.storage.get(`${SNAP_KEY}count`);
     if (!count) return;
     const stored = await this.ctx.storage.get(Array.from({ length: count }, (_, i) => `${SNAP_KEY}${i}`));
@@ -72,6 +76,8 @@ export class Tracker extends DurableObject {
 
   async persist() {
     if (!this.dirty) return;
+    // small (minutes of activity, a few hundred captures): one more row written per snapshot
+    await this.ctx.storage.put(MAP_KEY, mapSnapshot(this.map));
     this.dirty = false;
     prune(this.state, Date.now(), this.config.retainMs);
     const chunks = await packState(this.state);

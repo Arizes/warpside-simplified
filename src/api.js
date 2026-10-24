@@ -17,7 +17,7 @@ const HEADERS = {
  * `map` is the map state; `statics.loaded(world)` returns the continent geometry already in memory and
  * `statics.get(world, zone)` loads one (from storage or Census).
  */
-export function createApi({ state, config, status, feed, map = createMapState(), statics = { loaded: () => ({}), get: async () => null }, now = Date.now }) {
+export function createApi({ state, config, status, feed, map = createMapState(), statics = { loaded: () => ({}), get: async () => null }, requestOutfit = () => {}, now = Date.now }) {
   const memo = new Map(); // `${world}:${window}` -> { at, body }
 
   const json = (code, obj, cache = 'no-store') =>
@@ -68,7 +68,7 @@ export function createApi({ state, config, status, feed, map = createMapState(),
       const z = url.searchParams.get('zone');
       const zone = z === null ? busiestZone(map, state.events, world, t) : Number(z);
       if (world === null || !ZONES[zone]) return json(400, { error: 'invalid world or zone' });
-      if (url.pathname === '/api/map') return json(200, computeMap(map, statics.loaded(world), state.events, world, zone, t));
+      if (url.pathname === '/api/map') return json(200, computeMap(map, statics.loaded(world), state.events, world, zone, t, (id) => state.outfits?.[id] || (requestOutfit(world, id), null)));
       try {
         const geo = await statics.get(world, zone);
         // geometry never changes between game updates, so browsers and the edge may keep it for a day

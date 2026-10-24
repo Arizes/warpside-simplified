@@ -87,7 +87,7 @@
 
     <div id="view-map" role="tabpanel" aria-labelledby="tab-map" hidden>
       <div class="mapwrap">
-        <section class="mapbox" id="map-box" aria-label="Continent map">
+        <section class="mapbox" id="map-box" aria-label="Continent map. Click a region for details; Escape closes them." tabindex="-1">
           <svg id="map-svg" role="img" aria-label="Continent map with territory, lattice links, bases and live fights"></svg>
           <div class="map-ctl" role="group" aria-label="Map controls">
             <button type="button" id="map-in" title="Zoom in"><span class="sr">Zoom in</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg></button>
@@ -95,11 +95,12 @@
             <button type="button" id="map-fit" title="Show whole continent"><span class="sr">Show whole continent</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/></svg></button>
             <button type="button" id="map-sound" aria-pressed="true"><span class="sr">Zoom sounds on</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h3l4-3v10l-4-3H3z"/><path class="wave" d="M13 7.5a3.5 3.5 0 0 1 0 5M15 5.5a6.5 6.5 0 0 1 0 9"/></svg></button>
           </div>
-          <div class="map-legend" aria-hidden="true">
-            <span><i class="lg-fight"></i>Active fight</span>
-            <span><i class="lg-diamond"></i>Major base</span>
-            <span><i class="lg-dash"></i>Contested link</span>
+          <div class="map-hud" id="map-hud" aria-live="polite"></div>
+          <div class="map-filters">
+            <button type="button" id="map-filters-toggle" aria-expanded="true" aria-controls="map-filters-list">Filters</button>
+            <div id="map-filters-list" class="filters-list"></div>
           </div>
+          <aside class="map-card" id="map-card" aria-label="Selected region" hidden></aside>
           <div class="map-tip" id="map-tip" hidden></div>
           <p class="map-status" id="map-status" hidden></p>
         </section>
@@ -118,7 +119,7 @@
             <h2>Recent captures</h2>
             <ul class="captures" id="map-captures"></ul>
           </section>
-          <p class="note small">Fights are estimated: Daybreak publishes the continent of each kill, not its position, so kills are placed at bases where a participant was recently seen capturing or defending.</p>
+          <p class="note small">Fights are estimated: Daybreak publishes the continent of each kill, not its position, so kills are placed at bases where a participant was recently seen capturing or defending. Player counts are characters seen in those events, shown in the in-game brackets; they are a lower bound.</p>
         </aside>
       </div>
     </div>

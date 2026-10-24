@@ -56,7 +56,8 @@ export function parseMessage(m, servers, nowMs = Date.now()) {
   }
   if (p.event_name === 'FacilityControl') {
     if (!fac) return null;
-    return { kind: 'control', world, ts, zone, fac, from: Number(p.old_faction_id) || 0, to: Number(p.new_faction_id) || 0 };
+    const outfit = /^\d{1,20}$/.test(p.outfit_id || '') && p.outfit_id !== '0' ? p.outfit_id : null;
+    return { kind: 'control', world, ts, zone, fac, from: Number(p.old_faction_id) || 0, to: Number(p.new_faction_id) || 0, outfit };
   }
   if (p.event_name !== 'Death') return null;
 

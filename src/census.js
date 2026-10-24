@@ -69,6 +69,7 @@ export async function fetchOwnership(opts, ns, world, zones) {
 export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.now }) {
   const pendChars = {}; // ns -> Set
   const pendItems = {};
+  const pendOutfits = {};
   let backoffUntil = 0;
 
   const queue = (m, ns, id) => {
@@ -112,6 +113,14 @@ export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.
         for (const it of list) state.items[it.item_id] = { n: it.name?.en || `Item ${it.item_id}`, img: it.image_path || '' };
         for (const id of ids) state.items[id] ||= { n: `Item ${id}`, img: '' };
       }
+      for (const ns of Object.keys(pendOutfits)) {
+        const ids = [...pendOutfits[ns]].filter((id) => !state.outfits[id]).slice(0, BATCH);
+        ids.forEach((id) => pendOutfits[ns].delete(id));
+        if (!ids.length) continue;
+        const list = await census(ns, 'outfit', `outfit_id=${ids.join(',')}&c:show=outfit_id,alias,name`);
+        for (const o of list) state.outfits[o.outfit_id] = { tag: String(o.alias || '').slice(0, 8), name: String(o.name || '').slice(0, 64) };
+        for (const id of ids) state.outfits[id] ||= { tag: '', name: '' };
+      }
     } catch (err) {
       console.warn('census lookup failed, backing off 30s:', err.message);
       backoffUntil = now() + 30e3;
@@ -131,6 +140,10 @@ export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.
     requestCharacter(world, id) {
       const ns = SERVERS[world]?.ns;
       if (ns) queue(pendChars, ns, id);
+    },
+    requestOutfit(world, id) {
+      const ns = SERVERS[world]?.ns;
+      if (ns) queue(pendOutfits, ns, id);
     },
   };
 }

@@ -105,3 +105,20 @@ test('a failed lookup backs off instead of hammering Census', async () => {
   await lookups.flush();
   assert.equal(calls, 2);
 });
+
+test('map endpoints validate the zone, cache geometry for a day and ask for unknown outfit names', async () => {
+  const { state } = setup();
+  const asked = [];
+  const map = { owners: { 1000: { 2: { 10: 1 } } }, held: { 1000: { A: { f: 1, oid: '42', t: NOW - 1000 } } }, charFac: {}, activity: [], captures: [] };
+  const geo = { hexes: [[0, 0, '10']], regions: { 10: { fac: 'A' } }, links: [] };
+  const api = createApi({ state, config: { retainMs: 24 * 3600e3 }, status: {}, feed: {}, map, statics: { loaded: () => ({ 2: geo }), get: async (w, z) => (z === 2 ? geo : null) }, requestOutfit: (w, id) => asked.push([w, id]), now: () => NOW });
+  assert.equal((await get(api, '/api/map?world=1000&zone=99')).status, 400);
+  assert.equal((await get(api, '/api/map?world=1000&zone=abc')).status, 400);
+  const m = await (await get(api, '/api/map?world=1000&zone=2')).json();
+  assert.equal(m.owners[10], 1);
+  assert.deepEqual(m.held.A.outfit, { id: '42', tag: '', name: '' });
+  assert.deepEqual(asked, [[1000, '42']]);
+  const s = await get(api, '/api/map-static?world=1000&zone=2');
+  assert.equal(s.headers.get('cache-control'), 'public, max-age=86400');
+  assert.equal((await get(api, '/api/map-static?world=1000&zone=4')).status, 503);
+});

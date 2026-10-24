@@ -49,7 +49,7 @@ test('capture, defend and FacilityControl become facility and control records', 
   const cap = parseMessage({ type: 'serviceMessage', payload: { ...base, event_name: 'PlayerFacilityDefend', character_id: '77' } }, SERVERS);
   assert.deepEqual(cap, { kind: 'facility', world: 1000, ts: 1700000000000, zone: 2, fac: '6200', id: '77' });
   const ctl = parseMessage({ type: 'serviceMessage', payload: { ...base, event_name: 'FacilityControl', old_faction_id: '2', new_faction_id: '1', outfit_id: '9' } }, SERVERS);
-  assert.deepEqual(ctl, { kind: 'control', world: 1000, ts: 1700000000000, zone: 2, fac: '6200', from: 2, to: 1 });
+  assert.deepEqual(ctl, { kind: 'control', world: 1000, ts: 1700000000000, zone: 2, fac: '6200', from: 2, to: 1, outfit: '9' });
   assert.equal(parseMessage({ type: 'serviceMessage', payload: { ...base, event_name: 'FacilityControl', facility_id: '1;x' } }, SERVERS), null);
 });
 
