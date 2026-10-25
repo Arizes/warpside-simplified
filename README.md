@@ -107,8 +107,9 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   only outside the playable hexes, so it never tints the terrain. **Battle bubbles** are short orange puffs on a canvas over the map: a fight's puff rate follows the
   server's measured heat at that base, but individual puffs are not individual kills and their spread around the base
   is decorative. **Cut-off** territory (not linked to its empire's warpgate through its own lattice, computed from
-  ownership and `facility_link`) is dimmed. Markers are built once per update and only re-scaled while zooming, and a
-  drag glides to a stop; arrow keys pan and +/- zoom. Base icons are original glyphs, not game art (rule 10).
+  ownership and `facility_link`) is dimmed. While zooming or panning, the heavy layer (terrain, territory, grid, cloud)
+  is only moved by a GPU transform and redrawn once the view settles, as Leaflet does on PS2Alerts; the lattice,
+  icons and names sit in a light overlay that follows every frame. A drag glides to a stop; arrow keys pan and +/- zoom. Base icons are original glyphs, not game art (rule 10).
   Hex geometry is adapted from Honu (MIT,
   `src/map/LedgerModels.ts`). Clicking a region shows its owner, the outfit that captured it (only for flips seen
   since tracking started), combat in the last 10 minutes and recent captures. Player counts are distinct characters

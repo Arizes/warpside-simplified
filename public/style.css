@@ -245,7 +245,10 @@ footer p { max-width: 90ch; text-wrap: pretty; }
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background: radial-gradient(ellipse at center, transparent 62%, rgba(1, 4, 6, 0.75) 100%);
 }
-#map-svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; overscroll-behavior: contain; }
+#map-svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; overscroll-behavior: contain;
+  /* its own compositor layer: while zooming it is only transformed, never re-rasterised (see map.js) */
+  transform-origin: 0 0; will-change: transform; }
+.map-top { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
 #map-svg.drag { cursor: grabbing; }
 .map-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .m-tiles { filter: none; }
@@ -287,12 +290,12 @@ footer p { max-width: 90ch; text-wrap: pretty; }
 .m-base .glyph.stroked { fill: none; stroke: #f4f8ff; stroke-width: 0.16; }
 .m-label { fill: #fff; stroke: rgba(0, 0, 0, 0.8); stroke-width: 3; paint-order: stroke; stroke-linejoin: round; text-anchor: middle; font-family: Rajdhani, sans-serif; font-weight: 600; letter-spacing: 0.02em; }
 .m-name.major .m-label { font-weight: 700; }
-#map-svg:not(.detail) .m-name.minor:not(.sel) .m-label { display: none; }
+#map-top:not(.detail) .m-name.minor:not(.sel) .m-label { display: none; }
 .m-pop { fill: rgba(40, 16, 2, 0.9); stroke: #ffb04a; stroke-width: 1; }
 .m-pop-text { fill: #ffd28a; text-anchor: middle; font-family: Rajdhani, sans-serif; font-weight: 700; }
 
 #map-svg.no-terrain .m-tiles, #map-svg.no-outline .m-borders, #map-svg.no-grid .m-grid, #map-svg.no-cloud .m-cloud,
-#map-svg.no-lattice .m-lattice, #map-svg.no-bases .m-bases, #map-svg.no-names .m-label, #map-svg.no-population .m-popg { display: none; }
+#map-top.no-lattice .m-lattice, #map-top.no-bases .m-bases, #map-top.no-names .m-label, #map-top.no-population .m-popg { display: none; }
 #map-svg.no-owner .m-region { fill-opacity: 0 !important; }
 #map-svg.no-owner .m-region:hover { fill-opacity: 0.15 !important; }
 #map-svg.no-owner .m-cloud { display: none; }

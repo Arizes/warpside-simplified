@@ -2,7 +2,7 @@
 // influence cloud, the lattice, base icons, animated battle bubbles and a region card. All text from the API
 // is set with textContent.
 // Hex geometry adapted from Honu (https://github.com/varunda/honu, MIT, src/map/LedgerModels.ts).
-import { bounds, cutOffRegions, intensity, labelLines, puffRate } from './map-logic.js';
+import { bounds, cutOffRegions, intensity, labelLines, layerShift, progress, puffRate } from './map-logic.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const HALF = 4096; // continents are 8,192 m square, centred on the origin
@@ -104,12 +104,20 @@ function createSounds() {
 
 export function createMap({ $, el, api, emblem, getWorld, onError }) {
   const svg = $('map-svg');
+  // Light layers (lattice, base icons, names) live in a second SVG on top, so they can follow every
+  // animation frame without forcing the heavy territory layer underneath to be redrawn.
+  const top = $('map-top');
   const box = $('map-box');
   const tip = $('map-tip');
   const fxCanvas = $('map-fx');
   const fx = fxCanvas.getContext('2d');
   const layer = {};
-  for (const id of ['tiles', 'fog', 'regions', 'cloud', 'grid', 'borders', 'selected', 'lattice', 'bases', 'labels']) layer[id] = svgEl('g', { class: `m-${id}` }, svg);
+  for (const id of ['tiles', 'fog', 'regions', 'cloud', 'grid', 'borders', 'selected']) layer[id] = svgEl('g', { class: `m-${id}` }, svg);
+  for (const id of ['lattice', 'bases', 'labels']) layer[id] = svgEl('g', { class: `m-${id}` }, top);
+  const flag = (cls, on) => {
+    svg.classList.toggle(cls, on);
+    top.classList.toggle(cls, on);
+  };
   // The cloud glows only beyond the playable hexes, so it never tints the terrain inside the territory.
   const cloudClip = svgEl('path', { 'clip-rule': 'evenodd' }, svgEl('clipPath', { id: 'm-outside' }, svgEl('defs', {}, svg)));
   const cloudImg = svgEl('image', { x: -HALF, y: -HALF, width: 2 * HALF, height: 2 * HALF, preserveAspectRatio: 'none', 'clip-path': 'url(#m-outside)' }, layer.cloud);
@@ -127,7 +135,6 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   let selected = null; // region id
   let vb = [-HALF, -HALF, 2 * HALF, 2 * HALF];
   let anim = 0;
-  let raf = 0;
   let timer = 0;
   let active = false;
   let tilesMissing = false;
@@ -253,47 +260,66 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     }
     return out;
   }
-  function render() {
-    svg.setAttribute('viewBox', vb.map((v) => v.toFixed(1)).join(' '));
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => {
-      drawTiles();
-      placeMarkers();
-    });
+  /*
+   * Profiling showed that changing the heavy SVG's viewBox on every animation frame made the browser
+   * re-lay-out, repaint and re-rasterise every hex, the grid, the fog and the terrain at each new scale,
+   * blocking frames for 50 to 150 ms. Like Leaflet (PS2Alerts), the heavy layer is now only moved and
+   * scaled with a compositor transform while the view is in motion, and its viewBox is committed once the
+   * motion settles. The light overlay still gets the exact viewBox every frame.
+   */
+  const fmt = (v) => v.map((n) => n.toFixed(1)).join(' ');
+  let drawn = [...vb]; // the viewBox the heavy layer was last rendered with
+  let shift = { s: 1, tx: 0, ty: 0 };
+  let settleTimer = 0;
+  function applyView() {
+    top.setAttribute('viewBox', fmt(vb));
+    shift = layerShift(drawn, vb, size.w, size.h);
+    const { s, tx, ty } = shift;
+    svg.style.transform = Math.abs(s - 1) < 1e-6 && Math.abs(tx) < 0.01 && Math.abs(ty) < 0.01 ? '' : `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${s.toFixed(5)})`;
+    placeMarkers();
   }
-  function setView(v) {
+  /** Renders the heavy layer at the current view: one full redraw, done only when the view is at rest. */
+  function commitView() {
+    clearTimeout(settleTimer);
+    settleTimer = 0;
+    drawn = [...vb];
+    svg.setAttribute('viewBox', fmt(vb));
+    applyView();
+    drawTiles();
+  }
+  // a short pause first, so a run of wheel notches or a quick second drag costs one redraw, not several
+  const settleSoon = (ms = 140) => {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(commitView, ms);
+  };
+  /** During long drags, refresh the heavy layer before stretched or missing terrain becomes noticeable. */
+  const drifted = () => Math.abs(Math.log(shift.s)) > Math.log(1.8) || Math.abs(shift.tx) > size.w * 0.3 || Math.abs(shift.ty) > size.h * 0.3;
+  function setView(v, { moving = false } = {}) {
     cancelAnimationFrame(anim);
     anim = 0;
     vb = clamp(v);
-    render();
+    if (!moving || drifted()) commitView();
+    else applyView();
   }
   /** Eases the view box to a target, like the in-game map's zoom. */
   function animateTo(goal, ms = 280) {
     cancelAnimationFrame(anim);
+    clearTimeout(settleTimer);
     const from = [...vb];
     const to = clamp(goal);
     const start = performance.now();
     const step = (t) => {
-      const p = Math.min(1, (t - start) / ms);
+      const p = progress(t, start, ms);
       const e = easeOut(p);
       vb = from.map((v, i) => v + (to[i] - v) * e);
-      svg.setAttribute('viewBox', vb.map((v) => v.toFixed(1)).join(' '));
-      placeMarkers();
-      tilesSoon(t);
+      applyView();
       if (p < 1) anim = requestAnimationFrame(step);
       else {
         anim = 0;
-        render();
+        settleSoon();
       }
     };
     anim = requestAnimationFrame(step);
-  }
-  let lastTiles = 0;
-  /** Loads newly exposed terrain during long animations, at most every 120 ms. */
-  function tilesSoon(now) {
-    if (now - lastTiles < 120) return;
-    lastTiles = now;
-    drawTiles();
   }
   let target = null; // where wheel zooming is heading, so fast scrolling stays smooth
   function zoomAt(factor, cx, cy, smooth = true) {
@@ -304,10 +330,12 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     sounds.play(f < 1 ? 'in' : 'out');
     target = [cx - (cx - base[0]) * f, cy - (cy - base[1]) * f, base[2] * f, base[3] * f];
     if (smooth) animateTo(target, 220);
-    else setView(target);
+    else setView(target, { moving: true }); // pinch: settles when the fingers lift
   }
   /** The whole continent, filling the box like the in-game overview. */
   function fitBox() {
+    // the size cache waits on a ResizeObserver callback, which can arrive after the first data does
+    size = { w: svg.clientWidth || size.w, h: svg.clientHeight || size.h };
     const [x0, y0, x1, y1] = geo?.box || [-HALF, -HALF, HALF, HALF];
     const a = aspect();
     const w = Math.max(x1 - x0, (y1 - y0) / a) * 1.16;
@@ -321,7 +349,8 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     return { k, ox: (size.w - vb[2] * k) / 2, oy: (size.h - vb[3] * k) / 2 };
   }
   const toMap = (clientX, clientY) => {
-    const b = svg.getBoundingClientRect(); // input events only, so the page offset is always current
+    // the overlay is never transformed, so its box is the true map box even mid-animation
+    const b = top.getBoundingClientRect(); // input events only, so the page offset is always current
     const { k, ox, oy } = viewport();
     return [vb[0] + (clientX - b.left - ox) / k, vb[1] + (clientY - b.top - oy) / k];
   };
@@ -492,7 +521,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     const k = scale();
     const u = (1 / k).toFixed(3);
     for (const m of marks) m.g.setAttribute('transform', `translate(${m.x.toFixed(1)} ${m.y.toFixed(1)}) scale(${u})`);
-    svg.classList.toggle('detail', k > DETAIL_K);
+    flag('detail', k > DETAIL_K);
     if (!fxRaf) drawFx(performance.now());
   }
 
@@ -789,7 +818,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     });
   }
   function applyLayers() {
-    for (const [key] of LAYERS) svg.classList.toggle(`no-${key}`, !layers[key]);
+    for (const [key] of LAYERS) flag(`no-${key}`, !layers[key]);
     if (layers.terrain) drawTiles();
     else clearTiles();
     placeMarkers();
@@ -891,30 +920,31 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     hideTip();
     const dt = Math.max(1, e.timeStamp - prev[2]);
     fling = [(e.clientX - prev[0]) / k / dt, (e.clientY - prev[1]) / k / dt];
-    setView([vb[0] - (e.clientX - prev[0]) / k, vb[1] - (e.clientY - prev[1]) / k, vb[2], vb[3]]);
+    setView([vb[0] - (e.clientX - prev[0]) / k, vb[1] - (e.clientY - prev[1]) / k, vb[2], vb[3]], { moving: true });
   });
+  /** Returns true when a glide started; it settles the heavy layer itself when it stops. */
   function glide() {
-    if (!fling || reduceMotion.matches) return;
+    if (!fling || reduceMotion.matches) return false;
     let [vx, vy] = fling;
-    if (Math.hypot(vx, vy) * scale() < 0.25) return; // under 0.25 px/ms: a deliberate stop, not a flick
+    if (Math.hypot(vx, vy) * scale() < 0.25) return false; // under 0.25 px/ms: a deliberate stop, not a flick
     let last = performance.now();
     const step = (now) => {
-      const dt = now - last;
-      last = now;
+      const dt = Math.max(0, now - last); // same early-timestamp guard as animateTo
+      last = Math.max(last, now);
       const decay = 0.994 ** dt;
       vx *= decay;
       vy *= decay;
       vb = clamp([vb[0] - vx * dt, vb[1] - vy * dt, vb[2], vb[3]]);
-      svg.setAttribute('viewBox', vb.map((v) => v.toFixed(1)).join(' '));
-      placeMarkers();
-      tilesSoon(now);
+      applyView();
+      if (drifted()) commitView();
       if (Math.hypot(vx, vy) * scale() > 0.02) anim = requestAnimationFrame(step);
       else {
         anim = 0;
-        render();
+        settleSoon();
       }
     };
     anim = requestAnimationFrame(step);
+    return true;
   }
   const release = (e) => {
     const wasClick = pointers.size === 1 && moved <= 4;
@@ -922,7 +952,8 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = 0;
     if (!pointers.size) svg.classList.remove('drag');
-    if (wasDrag && e.type === 'pointerup') glide();
+    // a drag or pinch moved only the compositor layer: redraw it now unless a glide carries on
+    if (!pointers.size && !wasClick && !(wasDrag && e.type === 'pointerup' && glide())) settleSoon(0);
     if (wasClick && e.type === 'pointerup') {
       // the event target is the svg (pointer capture), so find the region under the pointer
       const hit = document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.dataset?.rid);

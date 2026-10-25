@@ -89,3 +89,20 @@ export function bounds(points, pad = 0) {
   }
   return Number.isFinite(x0) ? [x0 - pad, y0 - pad, x1 + pad, y1 + pad] : null;
 }
+
+/**
+ * The CSS transform that makes a layer rendered with viewBox `drawn` line up with viewBox `view`, for an
+ * SVG of `w` x `h` pixels with the default centred "meet" fit. Used to move the heavy map layer on the
+ * compositor while zooming instead of re-rendering it every frame. Returns { s, tx, ty } (scale, pixels).
+ */
+export function layerShift(drawn, view, w, h) {
+  const k = Math.min(w / view[2], h / view[3]);
+  const kd = Math.min(w / drawn[2], h / drawn[3]) || k;
+  const s = k / kd;
+  const tx = (w - view[2] * k) / 2 - view[0] * k - s * ((w - drawn[2] * kd) / 2 - drawn[0] * kd);
+  const ty = (h - view[3] * k) / 2 - view[1] * k - s * ((h - drawn[3] * kd) / 2 - drawn[1] * kd);
+  return { s, tx, ty };
+}
+
+/** Animation progress 0..1. A frame's timestamp can predate the start; unclamped, the first frame ran backwards. */
+export const progress = (now, start, ms) => Math.min(1, Math.max(0, (now - start) / ms));
