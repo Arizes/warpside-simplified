@@ -89,6 +89,18 @@
         </div>
         <div class="viewer" id="outfits-table" tabindex="0" aria-label="Outfit leaderboard, scrollable"></div>
       </section>
+
+      <section class="panel spawns" aria-labelledby="spawns-title">
+        <div class="toolbar">
+          <h2 id="spawns-title">Hottest Spawn Points</h2>
+          <span class="sub">Activity in the last 5 minutes</span>
+        </div>
+        <div class="scroll" id="spawns-table" tabindex="0" aria-label="Spawn activity leaderboard, scrollable">
+          <p class="empty">Waiting for spawn activity.</p>
+        </div>
+        <p class="note small">Sunderer and Router spawn bonuses only. Totals reset after 5 idle minutes. Outfit names reflect the credited owner's current membership, not outfit ownership at deployment. Base locations, deployment times and lifespans are unavailable.</p>
+        <p class="note small" id="spawns-nav-note">Select a spawn to open its continent. A base is highlighted only when its location is verified.</p>
+      </section>
     </div>
 
     <div id="view-players" role="tabpanel" aria-labelledby="tab-players" hidden>

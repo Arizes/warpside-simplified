@@ -68,6 +68,7 @@ export async function fetchOwnership(opts, ns, world, zones) {
  */
 export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.now }) {
   const pendChars = {}; // ns -> Set
+  const refreshChars = new Set(); // spawn owners need recent outfit membership, not a day-old cache
   const pendItems = {};
   const pendOutfits = {};
   let backoffUntil = 0;
@@ -82,8 +83,7 @@ export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.
     if (now() < backoffUntil) return;
     try {
       for (const ns of Object.keys(pendChars)) {
-        const ids = [...pendChars[ns]].filter((id) => !state.chars[id]).slice(0, BATCH);
-        ids.forEach((id) => pendChars[ns].delete(id));
+        const ids = [...pendChars[ns]].filter((id) => !state.chars[id] || refreshChars.has(id)).slice(0, BATCH);
         if (!ids.length) continue;
         const list = await census(
           ns,
@@ -100,10 +100,13 @@ export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.
             oid: c.outfit?.outfit_id || null,
             tag: c.outfit?.alias || '',
             on: c.outfit?.name || '',
+            at: now(),
           };
         }
         // deleted / unknown characters: cache a placeholder so we do not ask again
         for (const id of ids) state.chars[id] ||= { n: `#${id}`, f: 0, br: 0, p: 0, oid: null, tag: '', on: '' };
+        for (const id of ids) refreshChars.delete(id);
+        ids.forEach((id) => pendChars[ns].delete(id));
       }
       for (const ns of Object.keys(pendItems)) {
         const ids = [...pendItems[ns]].filter((id) => !state.items[id]).slice(0, BATCH);
@@ -137,9 +140,13 @@ export function createLookups({ serviceId, state, fetchImpl = fetch, now = Date.
       queue(pendChars, ns, victim);
       queue(pendItems, ns, weapon);
     },
-    requestCharacter(world, id) {
+    requestCharacter(world, id, freshOutfit = false) {
       const ns = SERVERS[world]?.ns;
-      if (ns) queue(pendChars, ns, id);
+      if (!ns || typeof id !== 'string' || !ID.test(id) || id === '0') return;
+      const c = state.chars[id];
+      const stale = freshOutfit && (!Number.isFinite(c?.at) || now() - c.at >= 5 * 60_000);
+      if (stale) refreshChars.add(id);
+      if (!c || stale) queue(pendChars, ns, id);
     },
     requestOutfit(world, id) {
       const ns = SERVERS[world]?.ns;

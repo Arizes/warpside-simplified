@@ -67,6 +67,7 @@ Browser ──▶ Worker ──▶ /api/* ────────────�
 | `src/store.js` | Event log, pruning, compressed chunked snapshots |
 | `src/stats.js` | Leaderboards, outfits, faction split, player count per empire, player detail |
 | `src/map.js` | Map state: ownership, base presence, fight detection, captures |
+| `src/spawns.js` | Bounded spawn NPC counters and the five-minute activity ranking |
 | `public/map.js` | The map view: tiles, hex territories, influence cloud, lattice, battle bubbles, region card, zoom sounds |
 | `public/map-logic.js` | Pure map helpers (cut-off territory, bubble rate, base labels), unit tested |
 | `scripts/fetch-map-assets.mjs` | Downloads map tiles and sounds from ps2alerts/assets at a pinned commit |
@@ -133,6 +134,24 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
 Target architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Limits, risks and deployment:
 [`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
 [`docs/research/census-api.md`](docs/research/census-api.md).
+
+## Hottest Spawn Points
+
+The Live page ranks up to 25 Sunderer and Router NPCs by observed spawn bonuses in the last five minutes.
+It updates with the existing 30-second stats poll, independently of the kill leaderboard's time window.
+Totals cover the observed active session; five minutes without a spawn expires the entry. Spawns/minute
+is the recent five-minute count divided by five, including when observation started less than five minutes ago.
+Only filtered ESS experience IDs 233 and 1410 are subscribed, on the existing two connections. Sparse
+per-second counters expire after five minutes, at most 512 NPCs are held across both servers, and the
+existing state snapshot persists them. There is no new runtime dependency, raw XP log or per-viewer Census request.
+
+Names/tags identify the credited owner's current Census outfit, refreshed in the existing lookup batches
+at most once per five minutes per active owner. They do not assert outfit ownership at deployment. No
+verified official outfit-decal mapping exists in the PS4 data, so the existing Census faction emblems
+are used. Base-spawn counts, base coordinates, deployment timestamps and actual lifespans are unavailable;
+those values are not estimated. Clicking an entry opens its recorded continent. Base highlighting is
+supported when a verified facility is available, but these events do not supply one. Research, live PS4
+verification and Honu source references: [`docs/research/spawns.md`](docs/research/spawns.md).
 
 ## Credits
 

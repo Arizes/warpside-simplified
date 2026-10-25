@@ -86,9 +86,10 @@ test('streamUrl keeps https for Workers and takes wss for Node', () => {
 test('ensure subscribes on the socket it is given', async () => {
   const { collector, sockets } = await harness();
   await collector.ensure();
-  assert.equal(sockets.ps2ps4us.sent.length, 2); // character events, then world events
+  assert.equal(sockets.ps2ps4us.sent.length, 3); // character events, world events, filtered spawn bonuses
   assert.deepEqual(sockets.ps2ps4us.sent[0].eventNames.includes('Death'), true);
   assert.deepEqual(sockets.ps2ps4us.sent[1].eventNames, ['FacilityControl']);
+  assert.deepEqual(sockets.ps2ps4us.sent[2].eventNames, ['GainExperience_experience_id_233', 'GainExperience_experience_id_1410']);
   assert.equal((await get(collector, '/health')).streams.ps2ps4us, 'connected');
 });
 

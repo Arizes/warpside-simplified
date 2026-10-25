@@ -141,6 +141,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   let dataError = false;
   let marks = []; // [{ g, x, y }] marker groups drawn in screen pixels, re-scaled on every view change
   let cloudKey = '';
+  let requestVersion = 0;
 
   function setStatus() {
     const msg = dataError
@@ -826,23 +827,29 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   }
 
   /* ---------- data ---------- */
-  async function loadGeometry() {
-    const key = `${getWorld()}:${zone}`;
-    if (!geoCache[key]) geoCache[key] = prepare(await api(`/api/map-static?world=${getWorld()}&zone=${zone}`));
-    geo = geoCache[key];
-    buildStatic();
-  }
   async function poll() {
+    const version = ++requestVersion;
+    const world = getWorld();
+    const requestedZone = zone;
     try {
-      const q = zone === null ? '' : `&zone=${zone}`;
-      const data = await api(`/api/map?world=${getWorld()}${q}`);
+      const q = requestedZone === null ? '' : `&zone=${requestedZone}`;
+      const data = await api(`/api/map?world=${world}${q}`);
+      if (version !== requestVersion || world !== getWorld()) return false;
       const first = zone === null || !geo;
+      let nextGeo = geo;
+      if (first) {
+        const key = `${world}:${data.zone}`;
+        if (!geoCache[key]) geoCache[key] = prepare(await api(`/api/map-static?world=${world}&zone=${data.zone}`));
+        if (version !== requestVersion || world !== getWorld()) return false;
+        nextGeo = geoCache[key];
+      }
       zone = data.zone;
       live = data;
       if (first) {
         clearTiles();
         prevOwners = {};
-        await loadGeometry();
+        geo = nextGeo;
+        buildStatic();
         fit();
       }
       paintRegions();
@@ -856,13 +863,15 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       kickFx();
       dataError = false;
     } catch {
+      if (version !== requestVersion || world !== getWorld()) return false;
       dataError = true;
       onError?.();
     }
     setStatus();
+    return !dataError;
   }
   async function changeZone(z) {
-    if (z === zone) return;
+    if (z === zone) return geo ? true : poll();
     zone = z;
     geo = null;
     live = null;
@@ -873,7 +882,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     for (const g of ['fog', 'regions', 'grid', 'borders', 'selected', 'lattice', 'bases', 'labels']) layer[g].replaceChildren();
     cloudImg.removeAttribute('href');
     cloudKey = '';
-    await poll();
+    return poll();
   }
 
   /* ---------- input ---------- */
@@ -1006,6 +1015,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   return {
     /** Called when the Map tab opens or closes. Polls and animates only while visible. */
     setActive(on) {
+      if (active === on) return;
       active = on;
       clearInterval(timer);
       kickFx();
@@ -1016,6 +1026,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       }, POLL_MS);
     },
     worldChanged() {
+      requestVersion++;
       zone = null;
       geo = null;
       live = null;
@@ -1023,6 +1034,21 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       emitters = {};
       select(null);
       if (active) poll();
+    },
+    /** Spawn events usually identify only a continent. Never focus an invented base position. */
+    async openLocation({ zone: z, facility = null }) {
+      const world = getWorld();
+      const ok = await changeZone(z);
+      if (!ok || world !== getWorld() || zone !== z || !geo) return false;
+      const rid = facility && geo.byFac[facility];
+      if (rid) {
+        select(rid);
+        focus(geo.regions[rid].pos, 1600);
+      } else {
+        select(null);
+        fit(true);
+      }
+      return true;
     },
   };
 }

@@ -1,6 +1,7 @@
 import { POP_RANGES, SERVERS, WINDOWS } from './config.js';
 import { ZONES, busiestZone, computeMap, createMapState } from './map.js';
 import { computePlayer, computeStats, onlineRoster, populationSeries } from './stats.js';
+import { computeSpawns } from './spawns.js';
 
 const CHAR_ID = /^\d{1,20}$/;
 const MEMO_MS = 5000; // identical stats requests within this window share one computation
@@ -58,6 +59,7 @@ export function createApi({ state, config, status, feed, map = createMapState(),
         feedOnline: feed[world] ?? null,
         trackedSince: Math.max(state.events[0]?.[0] ?? t, t - config.retainMs),
       });
+      body.spawns = computeSpawns(state, world, t);
       memo.set(key, { at: t, body });
       return json(200, body, LIVE_CACHE);
     }

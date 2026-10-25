@@ -1,4 +1,5 @@
 import { KILL, TEAMKILL, SUICIDE } from './store.js';
+import { LOADOUT_FACTION, SPAWN_TYPES } from './spawns.js';
 
 const CHARACTER_EVENTS = ['Death', 'PlayerLogin', 'PlayerLogout', 'PlayerFacilityCapture', 'PlayerFacilityDefend'];
 const WORLD_EVENTS = ['FacilityControl'];
@@ -20,6 +21,8 @@ export function subscribeMessages(worlds) {
   return [
     { service: 'event', action: 'subscribe', characters: ['all'], worlds: w, eventNames: CHARACTER_EVENTS, logicalAndCharactersWithWorlds: true },
     { service: 'event', action: 'subscribe', worlds: w, eventNames: WORLD_EVENTS },
+    { service: 'event', action: 'subscribe', characters: ['all'], worlds: w,
+      eventNames: Object.keys(SPAWN_TYPES).map((id) => `GainExperience_experience_id_${id}`), logicalAndCharactersWithWorlds: true },
   ];
 }
 
@@ -51,6 +54,18 @@ export function parseMessage(m, servers, nowMs = Date.now()) {
   // zone_id carries instance bits above the low 16 for some zones; the continent id is the low part.
   const zone = Number(p.zone_id) & 0xffff;
   const fac = /^\d{1,12}$/.test(p.facility_id || '') ? p.facility_id : null;
+
+  if (p.event_name === 'GainExperience') {
+    const type = Number(p.experience_id);
+    const id = (v) => typeof v === 'string' && /^\d{1,20}$/.test(v) && v !== '0';
+    const instance = Number(p.zone_id);
+    const faction = Number(p.team_id) || LOADOUT_FACTION[Number(p.loadout_id)] || 0;
+    const stamp = Number(p.timestamp) * 1000;
+    if (!Object.hasOwn(SPAWN_TYPES, type) || !id(p.character_id) || !id(p.other_id)
+      || !Number.isSafeInteger(instance) || instance <= 0 || instance > 0xffffffff
+      || ![0, 1, 2, 3, 4].includes(faction) || !Number.isFinite(stamp) || stamp <= 0 || stamp > nowMs + 60_000) return null;
+    return { kind: 'spawn', world, ts: stamp, zone, instance, type, owner: p.character_id, npc: p.other_id, faction };
+  }
 
   if (p.event_name === 'PlayerLogin') return { kind: 'login', world, ts, id: p.character_id };
   if (p.event_name === 'PlayerLogout') return { kind: 'logout', world, ts, id: p.character_id };

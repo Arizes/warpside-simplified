@@ -196,10 +196,59 @@ const RENDER = {
   live: () => {
     renderLive();
     renderOutfits();
+    renderSpawns();
   },
   players: renderPlayers,
   map: () => {}, // the map polls its own endpoint while visible
 };
+
+const ZONES = { 2: 'Indar', 4: 'Hossin', 6: 'Amerish', 8: 'Esamir', 344: 'Oshur' };
+function renderSpawns() {
+  const board = view.data?.spawns;
+  const missing = () => el('span', { class: 'sub', text: '—', title: 'Not available from the spawn event' });
+  const outfit = (p) => {
+    // No verified outfit-to-decal mapping exists in the PS4 Census dataset: official faction fallback.
+    const label = p.outfit ? `${p.outfit.tag ? `[${p.outfit.tag}] ` : ''}${p.outfit.name}` : 'Outfit unknown';
+    const icon = p.faction ? emblem(p.faction)
+      : el('span', { class: 'sub', 'aria-label': 'Faction unknown', text: '?' });
+    return el('span', { class: 'who' }, icon, el('span', { class: `c${p.faction}`, text: label }));
+  };
+  const locationCell = (p) => el('span', { class: 'spawn-location' },
+    el('span', { text: ZONES[p.zone] || 'Unknown continent' }),
+    el('small', { text: 'Base unavailable' }));
+  $('spawns-table').replaceChildren(buildTable({
+    cols: [
+      { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
+      { label: 'Spawn', cell: (p) => el('span', { class: `c${p.faction}`, text: p.type }) },
+      { label: "Owner's outfit", cell: outfit },
+      { label: 'Location', cell: locationCell },
+      { label: 'Last 5m', n: true, cell: (p) => num(p.recent) },
+      { label: 'Total observed', n: true, cell: (p) => num(p.total) },
+      { label: 'Spawns / min', n: true, cell: (p) => p.spm.toFixed(2) },
+      { label: 'First seen', n: true, cell: (p) => el('time', { datetime: new Date(p.firstSeen).toISOString(), title: stamp(p.firstSeen), text: hhmm(p.firstSeen) }) },
+      { label: 'Deployed', n: true, cell: missing },
+      { label: 'Lifespan', n: true, cell: missing },
+    ], rows: board?.rows || [], onRow: openSpawn,
+    empty: 'No Sunderer or Router spawn bonuses observed in the last 5 minutes. Base spawns are not exposed by this feed.',
+  }));
+}
+
+async function openSpawn(p) {
+  if (p.world !== view.world) {
+    setAlert('Waiting for spawn activity from the selected server.');
+    return;
+  }
+  if (!ZONES[p.zone]) {
+    setAlert('The spawn event did not identify a supported continent.');
+    return;
+  }
+  location.hash = 'map';
+  show('map');
+  $('map-box').scrollIntoView({ block: 'start' });
+  $('map-box').focus({ preventScroll: true });
+  const ok = await map.openLocation({ zone: p.zone, facility: p.facility });
+  if (!ok) setAlert('Could not load the spawn continent. Try again in a moment.');
+}
 
 /* ---------- population chart ---------- */
 const LINES = [['vs', 1], ['nc', 2], ['tr', 3], ['ns', 4]];

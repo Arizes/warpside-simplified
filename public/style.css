@@ -114,6 +114,12 @@ h2 small { color: var(--muted); font-size: 13px; font-weight: 500; letter-spacin
 h3 { margin: 14px 0 6px; font-size: 15px; font-weight: 600; color: var(--muted); }
 
 /* empire share and chart */
+.spawns { margin-top: 16px; }
+.spawns table { min-width: 1000px; }
+.spawns .note { margin-top: 10px; max-width: none; }
+.spawn-location { display: flex; flex-direction: column; gap: 2px; }
+.spawn-location small { color: var(--muted); }
+
 .fbar { display: flex; height: 32px; background: #03060b; border: 1px solid var(--line); overflow: hidden; }
 .fbar div { display: grid; place-items: center; font: 600 14px Rajdhani, sans-serif; color: #fff; min-width: 0; overflow: hidden; white-space: nowrap; transition: flex-grow 0.6s; }
 .fbar .f1 { background: #6a2fbf; } .fbar .f2 { background: #1f5ed1; } .fbar .f3 { background: #bd352d; }

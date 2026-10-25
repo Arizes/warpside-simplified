@@ -1,3 +1,4 @@
+import { noteSpawn } from './spawns.js';
 import { noteControl, noteDeath, noteFacility } from './map.js';
 
 /**
@@ -18,6 +19,10 @@ function markOnline(state, world, id, ts) {
  */
 export function applyRecord(state, lookups, feed, r, map = null, regionOf = () => null) {
   switch (r.kind) {
+    case 'spawn':
+      noteSpawn(state, r);
+      lookups.requestCharacter(r.world, r.owner, true);
+      return true;
     case 'feed':
       Object.assign(feed, r.feeds);
       return false;

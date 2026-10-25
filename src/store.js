@@ -1,3 +1,5 @@
+import { pruneSpawns } from './spawns.js';
+
 // Event tuple: [tsMs, world, attackerId, victimId, weaponId, flag, attackerTeam, victimTeam, zone]
 // (zone is missing on events saved before it was recorded; treat that as unknown.)
 // flag: 0 kill, 1 teamkill, 2 suicide / environment. IDs are strings (64-bit in Census).
@@ -26,11 +28,13 @@ export function createState() {
     chars: {}, // characterId -> { n, f, br, p, oid, tag, on }
     items: {}, // itemId -> { n, img }
     outfits: {}, // outfitId -> { tag, name } (for base captures on the map)
+    spawns: {}, // NPC -> bounded recent spawn counters, no full experience log
   };
 }
 
 /** Drops events older than the retention window, then caches nothing in the log still uses. */
 export function prune(state, now, retainMs) {
+  pruneSpawns(state, now);
   state.onlineW ||= {}; // snapshots written before these existed restore without them
   state.pop ||= [];
   const cut = now - retainMs;
@@ -52,6 +56,7 @@ export function prune(state, now, retainMs) {
   for (const id of Object.keys(state.onlineW)) if (!Object.hasOwn(state.online, id)) delete state.onlineW[id];
 
   const used = new Set(Object.keys(state.online));
+  for (const p of Object.values(state.spawns)) used.add(p.owner);
   for (const e of state.events) {
     used.add(e[2]);
     used.add(e[3]);
