@@ -1,5 +1,5 @@
 ﻿{
-  "name": "warpside2",
+  "name": "warpside",
   "main": "src/worker.js",
   "compatibility_date": "2026-09-01",
   // Not deployed yet. Deploy only to a Cloudflare account dedicated to this project: free-plan

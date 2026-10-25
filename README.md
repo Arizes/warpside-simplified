@@ -129,5 +129,5 @@ Target architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Limits, ris
 
 ## Credits
 
-Data from the Daybreak Census API. Warpside is a fan project, not affiliated with or endorsed by Daybreak
-Games. MIT licence.
+Data from the Daybreak Census API. MIT licence. Asset credits and licences ship in `public/maps/NOTICE.txt`.
+The site is branded Warpside; `warpside2.com` is its domain. The site has no disclaimer footer.
