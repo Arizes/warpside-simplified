@@ -61,10 +61,15 @@ Still to do: set `CENSUS_SERVICE_ID` (below), then the frontend and edge steps, 
    here, since the site has no login, no password field and `form-action 'none'`. To restore it:
    expression `(cf.waf.credential_check.password_leaked)`, action `block`, 5 requests per 10 s,
    mitigation timeout 10, characteristics `ip.src` and `cf.colo.id`.
-5. **Origin lock (open).** `ORIGIN_SECRET` in Railway plus a Transform Rule adding the same value as the
-   `x-origin-secret` header. `src/server.js` already enforces it on `/api/*` and exempts `/health` so the
-   platform health check keeps working. Until it is set, the Railway origin can be reached directly,
-   bypassing the cache and the rate limit above.
+5. **Origin lock done.** `ORIGIN_SECRET` in Railway, plus a Request Header Transform Rule
+   ("Warpside origin lock", `http.host eq "api.warpside2.com"`) that sets `x-origin-secret` to the same
+   value. `src/server.js` enforces it on `/api/*` and exempts `/health`, so the platform health check keeps
+   working. Verified by connecting straight to the Railway IP with `curl --resolve`: `/api/stats` answers
+   `403 forbidden` while the same request through Cloudflare answers `200` on a cache miss.
+   The two values must match exactly; if they ever diverge the API returns `403` for everyone, and deleting
+   `ORIGIN_SECRET` in Railway switches enforcement off immediately.
+   Note the dashboard path: Cloudflare has folded Transform Rules into **Rules → Overview → Create rule →
+   Request Header Transform Rule**; there is no separate Transform Rules page any more.
 5. Check: the page loads, `https://api.warpside2.com/health` shows both streams connected and events rising,
    and repeated `/api/stats` calls show `cf-cache-status: HIT`.
 
