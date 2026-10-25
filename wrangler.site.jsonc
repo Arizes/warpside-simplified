@@ -1,0 +1,13 @@
+{
+  // The frontend only: the page, map tiles and sounds, served from Cloudflare's edge.
+  // No "main", so there is no Worker script and no Durable Object here: static assets are free and
+  // unmetered, and the API lives on Railway at api.warpside2.com (docs/ARCHITECTURE.md).
+  // Deploy with: npm run deploy:site
+  "name": "warpside-site",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public"
+  },
+  "workers_dev": false,
+  "routes": [{ "pattern": "warpside2.com", "custom_domain": true }]
+}

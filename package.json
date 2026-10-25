@@ -16,6 +16,8 @@
     "dev:node": "node --env-file-if-exists=.env --watch src/server.js",
     "predeploy": "node scripts/fetch-map-assets.mjs",
     "deploy": "wrangler deploy",
+    "predeploy:site": "node scripts/fetch-map-assets.mjs",
+    "deploy:site": "wrangler deploy -c wrangler.site.jsonc",
     "test": "node --test test/"
   },
   "devDependencies": {

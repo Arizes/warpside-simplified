@@ -6,7 +6,10 @@
   <title>Warpside2 · PlanetSide 2 live leaderboards</title>
   <meta name="description" content="Live PlanetSide 2 leaderboards and continent map for Genudine and Ceres: top players and outfits by empire, live fights and base captures.">
   <meta name="theme-color" content="#070b12">
+  <!-- Cloudflare serves this page, Railway serves the API. Ignored on localhost, where one process serves both. -->
+  <meta name="api-base" content="https://api.warpside2.com">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://api.warpside2.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap">

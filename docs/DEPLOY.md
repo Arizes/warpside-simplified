@@ -37,8 +37,12 @@ Still to do: set `CENSUS_SERVICE_ID` (below), then the frontend and edge steps, 
 
 ### Cloudflare (frontend and edge)
 
-1. `warpside2.com` zone on Cloudflare (Free). Deploy `public/` as Workers static assets (no Worker script,
-   no Durable Object) on `warpside2.com`.
+1. `warpside2.com` zone on Cloudflare (Free). `npm run deploy:site` deploys `public/` as Workers static
+   assets from `wrangler.site.jsonc` (no Worker script, no Durable Object, so it is free and unmetered) and
+   creates the apex record. It fetches the ~120 MB of tiles and sounds first; they are not in git and not in
+   the Railway image, which is why the Railway URL on its own shows the page with an empty map.
+   The page finds the API through `<meta name="api-base">` in `public/index.html`; on localhost that is
+   ignored and one process serves both.
 2. DNS: the `api` CNAME is created **unproxied**, because Railway cannot complete its TLS challenge through
    the proxy. Once Railway shows the domain as issued, switch it to proxied; the zone's SSL mode must stay
    **Full** or **Full (strict)**, never Flexible, or the API answers in a redirect loop.

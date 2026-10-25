@@ -1,5 +1,6 @@
 // Dashboard client. Every string from the API (character names, outfits) is untrusted,
 // so nodes are built with textContent only: no innerHTML anywhere.
+import { apiBase } from './api-base.js';
 import { createMap } from './map.js';
 
 const $ = (id) => document.getElementById(id);
@@ -50,8 +51,10 @@ const clock = (ms) => {
 const emblem = (f, size = 22) => el('img', { src: `${CENSUS}/files/ps2/images/static/${EMBLEM[f] || EMBLEM[4]}.png`, alt: TAG[f] || '', width: size, height: size, loading: 'lazy' });
 const weaponCell = (name, img) => el('span', { class: 'wep' }, img ? el('img', { src: CENSUS + img, alt: '', loading: 'lazy' }) : null, el('span', { text: name }));
 
+const API = apiBase(location.hostname, document.querySelector('meta[name="api-base"]')?.content);
+
 async function api(path) {
-  const r = await fetch(path, { cache: 'no-store' });
+  const r = await fetch(API + path, { cache: 'no-store' });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
