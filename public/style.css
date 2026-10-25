@@ -130,6 +130,33 @@ h3 { margin: 14px 0 6px; font-size: 15px; font-weight: 600; color: var(--muted);
 .chart text { fill: var(--muted); font: 11px "IBM Plex Sans", sans-serif; }
 .chart line { stroke: var(--line); }
 
+/* population chart */
+.popcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.popcol h2 { margin-bottom: 0; }
+.popcol .note { margin-top: auto; }
+.chart.pop { height: 190px; background: #03060b; border: 1px solid var(--line); }
+.chart.pop svg { touch-action: pan-y; }
+.chart.pop .grid { stroke: var(--line-soft); }
+.chart.pop .guide { stroke: var(--accent); stroke-dasharray: 3 4; opacity: 0.7; }
+.chart.pop .ylab, .chart.pop .xlab { fill: var(--muted); font: 11px "IBM Plex Sans", sans-serif; letter-spacing: 0.04em; }
+.chart.pop .line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; filter: drop-shadow(0 0 5px currentColor); }
+.chart.pop .dot { fill: var(--bg); stroke: currentColor; stroke-width: 2; }
+.pop-vs { color: var(--vs); }
+.pop-nc { color: var(--nc); }
+.pop-tr { color: var(--tr); }
+.pop-ns { color: var(--ns); }
+.poplegend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-variant-numeric: tabular-nums; }
+.poplegend span { display: flex; align-items: baseline; gap: 6px; color: var(--muted); font-size: 13px; }
+.poplegend b { font: 700 17px Rajdhani, sans-serif; letter-spacing: 0.04em; }
+.poplegend .all { margin-right: 4px; letter-spacing: 0.1em; text-transform: uppercase; font-size: 12px; }
+.poplegend .all b { color: var(--accent); font-size: 22px; }
+.poplegend i { align-self: center; width: 12px; height: 3px; background: currentColor; box-shadow: 0 0 6px currentColor; }
+/* beats the muted legend colour, so the rule and the count take the empire's colour */
+.poplegend span.pop-vs { color: var(--vs); }
+.poplegend span.pop-nc { color: var(--nc); }
+.poplegend span.pop-tr { color: var(--tr); }
+.poplegend span.pop-ns { color: var(--ns); }
+
 /* empire columns (live tab) */
 .empires { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .empire { min-width: 0; }

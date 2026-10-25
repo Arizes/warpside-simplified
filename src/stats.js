@@ -2,6 +2,7 @@ import { KILL, TEAMKILL, SUICIDE, firstIndexSince } from './store.js';
 
 const HOUR = 3600e3;
 const NSO = 4;
+const POP_POINTS = 180; // most points sent for the population line
 const IMAGE_PATH = /^\/files\/ps2\/images\/static\/\d+\.png$/;
 
 /** Census image path for an item, or '' unless it has the expected shape (the browser loads it directly). */
@@ -35,6 +36,47 @@ function hourly(events, from, now, hours, match) {
     if (slot >= 0 && slot < hours) buckets[slot].kills++;
   }
   return buckets;
+}
+
+/**
+ * Characters online per empire on one world, right now. Built from the PlayerLogin and PlayerLogout
+ * events Daybreak publishes, plus anyone seen fighting; characters already online when the tracker
+ * started are missing until their next login, so this can read low, never high.
+ */
+export function onlineByFaction(state, world) {
+  const sample = { vs: 0, nc: 0, tr: 0, ns: 0 };
+  const worlds = state.onlineW || {};
+  for (const id of Object.keys(state.online)) {
+    if (worlds[id] !== world) continue;
+    const f = state.chars[id]?.f;
+    if (f === 1) sample.vs++;
+    else if (f === 2) sample.nc++;
+    else if (f === 3) sample.tr++;
+    else if (f === NSO) sample.ns++;
+  }
+  return sample;
+}
+
+/** One recorded sample per world, for the collector to append to `state.pop`. */
+export function populationSample(state, worlds, now) {
+  return worlds.map((world) => {
+    const { vs, nc, tr, ns } = onlineByFaction(state, world);
+    return [now, world, vs, nc, tr, ns];
+  });
+}
+
+/**
+ * The recorded population history for one world, oldest first, thinned to at most `max` points so
+ * the payload stays small. The live count is always the last point.
+ */
+function populationSeries(state, world, since, now, max = POP_POINTS) {
+  const rows = (state.pop || []).filter((r) => r[1] === world && r[0] >= since && r[0] <= now);
+  const step = Math.max(1, Math.ceil(rows.length / max));
+  const out = [];
+  for (let i = rows.length - 1; i >= 0; i -= step) out.push({ t: rows[i][0], vs: rows[i][2], nc: rows[i][3], tr: rows[i][4], ns: rows[i][5] });
+  out.reverse();
+  out.push({ t: now, ...onlineByFaction(state, world) });
+  return out;
 }
 
 /** Leaderboards for one world over [since, now]. */
@@ -125,7 +167,6 @@ export function computeStats(state, world, since, now, meta = {}) {
   });
 
   for (const p of rows) delete p._w;
-  const hours = Math.min(24, Math.max(1, Math.ceil((now - since) / HOUR)));
   return {
     world,
     since,
@@ -136,7 +177,7 @@ export function computeStats(state, world, since, now, meta = {}) {
     byFaction,
     activePlayers: ranked.length,
     factions,
-    hourly: hourly(events, since, now, hours, (e) => e[1] === world),
+    population: populationSeries(state, world, since, now),
     ...meta,
   };
 }

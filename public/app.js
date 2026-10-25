@@ -136,7 +136,7 @@ function renderLive(s = view.data) {
   }
   $('factions').replaceChildren(bar, el('div', { class: 'flegend' }, ...s.factions.map((f) =>
     el('span', {}, emblem(f.f), el('b', { class: `c${f.f}`, text: TAG[f.f] }), `${num(f.k)} kills`))));
-  drawChart($('chart'), s.hourly);
+  drawPopulation($('chart'), s.population);
 }
 
 /* ---------- players tab and the outfit viewer ---------- */
@@ -199,6 +199,94 @@ const RENDER = {
   map: () => {}, // the map polls its own endpoint while visible
 };
 
+/* ---------- population chart ---------- */
+const LINES = [['vs', 1], ['nc', 2], ['tr', 3], ['ns', 4]];
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const sumOf = (p) => p.vs + p.nc + p.tr + p.ns;
+
+/** Smallest round number at or above `v`, so the grid lands on readable values. */
+function niceTop(v) {
+  const m = Math.max(4, v);
+  const p = 10 ** Math.floor(Math.log10(m));
+  return [1, 1.5, 2, 2.5, 5, 10].find((x) => m <= x * p) * p;
+}
+function svgEl(tag, props) {
+  const n = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(props)) n.setAttribute(k, String(v));
+  return n;
+}
+/** Legend counts for one sample: "All 285" and a chip per empire. */
+function popLegend(sample, at) {
+  const box = $('pop-legend');
+  if (!box) return;
+  box.replaceChildren(
+    el('span', { class: 'all' }, el('b', { text: num(sumOf(sample)) }), el('span', { text: at ? `online · ${at}` : 'online' })),
+    ...LINES.map(([key, f]) => el('span', { class: `pop-${key}` }, el('i', {}), el('b', { text: num(sample[key]) }), el('span', { text: TAG[f] }))),
+  );
+}
+function drawPopulation(target, samples) {
+  if (!samples?.length) {
+    target.replaceChildren(el('p', { class: 'empty', text: 'No population recorded yet. The line fills in a minute after the tracker starts.' }));
+    popLegend({ vs: 0, nc: 0, tr: 0, ns: 0 });
+    return;
+  }
+  const W = Math.max(320, Math.round(target.clientWidth) || 720);
+  const H = 190, padL = 36, padR = 6, padT = 10, padB = 20;
+  const top = niceTop(Math.max(...samples.flatMap((p) => LINES.map(([k]) => p[k]))));
+  const x = (i) => padL + ((W - padL - padR) * i) / Math.max(1, samples.length - 1);
+  const y = (v) => padT + (H - padT - padB) * (1 - v / top);
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img' });
+  svg.setAttribute('aria-label', `Players online per empire over the window, peak ${num(top)} on a single empire`);
+  for (const v of [0, top / 2, top]) {
+    svg.append(svgEl('line', { class: 'grid', x1: padL, x2: W - padR, y1: y(v), y2: y(v) }));
+    const label = svgEl('text', { class: 'ylab', x: padL - 7, y: y(v) + 4, 'text-anchor': 'end' });
+    label.textContent = num(Math.round(v));
+    svg.append(label);
+  }
+  const stride = Math.ceil(samples.length / 6);
+  samples.forEach((p, i) => {
+    if (i % stride || i > samples.length - stride / 2) return;
+    const t = svgEl('text', { class: 'xlab', x: x(i), y: H - 5, 'text-anchor': 'middle' });
+    t.textContent = hhmm(p.t);
+    svg.append(t);
+  });
+  for (const [key, f] of LINES) {
+    const d = samples.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
+    const path = svgEl('path', { class: `line pop-${key}`, d, 'vector-effect': 'non-scaling-stroke' });
+    const title = document.createElementNS(SVG, 'title');
+    title.textContent = `${TAG[f]} · now ${num(samples.at(-1)[key])}, peak ${num(Math.max(...samples.map((p) => p[key])))}`;
+    path.append(title);
+    svg.append(path);
+  }
+
+  // Hover readout: a guide line plus dots, with the legend following the pointer.
+  const guide = svgEl('line', { class: 'guide', x1: 0, x2: 0, y1: padT, y2: H - padB, visibility: 'hidden' });
+  const dots = LINES.map(([key]) => svgEl('circle', { class: `dot pop-${key}`, r: 3.2, cx: 0, cy: 0, visibility: 'hidden' }));
+  svg.append(guide, ...dots);
+  const reset = () => {
+    guide.setAttribute('visibility', 'hidden');
+    for (const d of dots) d.setAttribute('visibility', 'hidden');
+    popLegend(samples.at(-1), 'now');
+  };
+  svg.addEventListener('pointermove', (ev) => {
+    const box = svg.getBoundingClientRect();
+    const i = Math.min(samples.length - 1, Math.max(0, Math.round((((ev.clientX - box.left) / box.width) * W - padL) / ((W - padL - padR) / Math.max(1, samples.length - 1)))));
+    guide.setAttribute('x1', String(x(i)));
+    guide.setAttribute('x2', String(x(i)));
+    guide.setAttribute('visibility', 'visible');
+    dots.forEach((dot, n) => {
+      dot.setAttribute('cx', String(x(i)));
+      dot.setAttribute('cy', String(y(samples[i][LINES[n][0]])));
+      dot.setAttribute('visibility', 'visible');
+    });
+    popLegend(samples[i], hhmm(samples[i].t));
+  });
+  svg.addEventListener('pointerleave', reset);
+  target.replaceChildren(svg);
+  reset();
+}
+
 /* ---------- chart ---------- */
 function drawChart(target, buckets) {
   const W = 720, H = target.classList.contains('small') ? 90 : 150, pad = 18;
@@ -243,11 +331,19 @@ function renderSummary(s) {
   $('t-kills').textContent = num(s.factions.reduce((a, f) => a + f.k, 0));
   $('t-players').textContent = num(s.activePlayers);
   $('t-since').textContent = clock(s.now - Math.max(s.trackedSince, s.since));
-  $('hourly-note').textContent = `last ${s.hourly.length} h`;
+  $('pop-note').textContent = s.population?.length ? `${hhmm(s.population[0].t)} – now` : '';
   const live = s.stream === 'connected' && s.feedOnline !== false;
   $('status').className = `pill ${live ? 'live' : 'down'}`;
   $('status').lastElementChild.textContent = live ? 'Live' : s.stream === 'connected' ? 'Daybreak feed offline' : 'Reconnecting';
 }
+// The chart is drawn at the panel's pixel width, so redraw it once a resize settles.
+let resizeTimer;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (view.tab === 'live' && view.data) drawPopulation($('chart'), view.data.population);
+  }, 150);
+});
 function show(tab) {
   view.tab = TABS.includes(tab) ? tab : 'live';
   for (const t of TABS) {

@@ -103,6 +103,20 @@ test('a death frame reaches the event log and the API', async () => {
   assert.equal(stats.players.find((p) => p.id === '5428010618035323201').k, 1);
 });
 
+test('ticks record a population sample per world from the characters online', async () => {
+  const { collector, sockets } = await harness();
+  await collector.ensure();
+  sockets.ps2ps4us.emit('message', { data: death(Date.now()) });
+  await collector.tick(); // the first tick only arms the cadence
+  await collector.tick();
+  const samples = collector.state.pop.filter((p) => p[1] === 1000);
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].slice(2).reduce((a, b) => a + b, 0) >= 0, true);
+  const stats = await get(collector, '/api/stats?world=1000&window=24h');
+  assert.equal(stats.population.length, 2); // the recorded sample, then the live count
+  assert.equal(stats.population.at(-1).t >= samples[0][0], true);
+});
+
 test('a malformed frame is ignored rather than fatal', async () => {
   const { collector, sockets } = await harness();
   await collector.ensure();

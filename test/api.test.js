@@ -64,11 +64,15 @@ test('death, login and logout records update the state; feed records do not mark
   const feed = {};
   assert.equal(applyRecord(state, lookups, feed, { kind: 'login', world: 1000, ts: 5, id: '9' }), true);
   assert.equal(state.online['9'], 5);
+  assert.equal(state.onlineW['9'], 1000);
   assert.equal(applyRecord(state, lookups, feed, { kind: 'death', world: 1000, event: [6, 1000, '9', '8', '80', 0, 1, 2] }), true);
   assert.equal(state.events.length, 1);
+  assert.equal(state.online['8'], 6); // the victim was online even though its login was never seen
+  assert.equal(state.online['9'], 5); // and a login already recorded is not overwritten
   assert.deepEqual(queued[1], ['r', 1000, { attacker: '9', victim: '8', weapon: '80' }]);
   assert.equal(applyRecord(state, lookups, feed, { kind: 'logout', world: 1000, ts: 7, id: '9' }), true);
   assert.equal(state.online['9'], undefined);
+  assert.equal(state.onlineW['9'], undefined);
   assert.equal(applyRecord(state, lookups, feed, { kind: 'feed', feeds: { 1000: true } }), false);
   assert.deepEqual(feed, { 1000: true });
 });

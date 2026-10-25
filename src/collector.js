@@ -3,6 +3,7 @@ import { createLookups, fetchOwnership, fetchZoneStatic } from './census.js';
 import { SERVERS, loadConfig, worldsByEnv } from './config.js';
 import { applyRecord } from './ingest.js';
 import { ZONE_IDS, createMapState, mapSnapshot, pruneMap, restoreMap } from './map.js';
+import { populationSample } from './stats.js';
 import { createState, prune } from './store.js';
 import { parseMessage, subscribeMessages } from './stream.js';
 
@@ -12,6 +13,7 @@ const LOOKUP_MS = 3000; // minimum gap between Census lookup batches
 const STALE_MS = 90_000; // heartbeats arrive every ~30 s; silence means the socket is dead
 const RESUBSCRIBE_MS = 10 * 60_000;
 const OWNERSHIP_EVERY = 4; // ticks between map ownership polls (2 minutes; FacilityControl fills the gaps)
+const POP_EVERY = 2; // ticks between population samples (one a minute, kept for the retention window)
 
 /**
  * The collector: both stream connections, the rolling event log, the map and the API.
@@ -199,6 +201,10 @@ export function createCollector({ env = {}, store, openSocket, waitUntil = (p) =
     try {
       await connectAll();
       pruneMap(map, now);
+      if (ticks % POP_EVERY === 0) {
+        state.pop.push(...populationSample(state, Object.keys(SERVERS).map(Number), now));
+        dirty = true;
+      }
       if (ticks % OWNERSHIP_EVERY === 1) await pollOwnership();
       if (ticks % SAVE_EVERY === 0) await persist();
     } catch (err) {

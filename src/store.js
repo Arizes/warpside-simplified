@@ -8,11 +8,17 @@ export const SUICIDE = 2;
 // Durable Object storage values are limited to 2 MB, so a snapshot is split into chunks.
 export const CHUNK_BYTES = 1_500_000;
 
+// A session this long without a logout is almost certainly a logout we never saw (a dropped socket),
+// so the character is swept out of the online set rather than inflating the population for ever.
+const SESSION_MAX_MS = 18 * 3600e3;
+
 /** The whole mutable state: a rolling event log plus small lookup caches. */
 export function createState() {
   return {
     events: [], // ascending by ts
     online: {}, // characterId -> login ts
+    onlineW: {}, // characterId -> world (only for characters in `online`)
+    pop: [], // population samples, ascending by ts: [ts, world, vs, nc, tr, ns]
     chars: {}, // characterId -> { n, f, br, p, oid, tag, on }
     items: {}, // itemId -> { n, img }
     outfits: {}, // outfitId -> { tag, name } (for base captures on the map)
@@ -21,10 +27,24 @@ export function createState() {
 
 /** Drops events older than the retention window, then caches nothing in the log still uses. */
 export function prune(state, now, retainMs) {
+  state.onlineW ||= {}; // snapshots written before these existed restore without them
+  state.pop ||= [];
   const cut = now - retainMs;
   let i = 0;
   while (i < state.events.length && state.events[i][0] < cut) i++;
   if (i) state.events.splice(0, i);
+
+  let j = 0;
+  while (j < state.pop.length && state.pop[j][0] < cut) j++;
+  if (j) state.pop.splice(0, j);
+
+  for (const [id, ts] of Object.entries(state.online)) {
+    if (now - ts > SESSION_MAX_MS) {
+      delete state.online[id];
+      delete state.onlineW[id];
+    }
+  }
+  for (const id of Object.keys(state.onlineW)) if (!Object.hasOwn(state.online, id)) delete state.onlineW[id];
 
   const used = new Set(Object.keys(state.online));
   for (const e of state.events) {

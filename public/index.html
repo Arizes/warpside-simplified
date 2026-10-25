@@ -57,9 +57,11 @@
 
     <div id="view-live" role="tabpanel" aria-labelledby="tab-live">
       <section class="panel split">
-        <div>
-          <h2>Kills per hour <small id="hourly-note"></small></h2>
-          <div class="chart" id="chart"></div>
+        <div class="popcol">
+          <h2>Player count <small id="pop-note"></small></h2>
+          <div class="poplegend" id="pop-legend"></div>
+          <div class="chart pop" id="chart"></div>
+          <p class="note small">Counted from the logins and logouts Daybreak publishes, sampled once a minute, plus anyone seen fighting. Characters already online when the tracker started are missing until their next login, so the count can read low, never high.</p>
         </div>
         <div>
           <h2>Empire share</h2>

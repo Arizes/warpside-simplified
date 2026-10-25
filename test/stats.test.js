@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computePlayer, computeStats } from '../src/stats.js';
+import { computePlayer, computeStats, onlineByFaction, populationSample } from '../src/stats.js';
 import { CHUNK_BYTES, createState, firstIndexSince, packState, prune, unpackState } from '../src/store.js';
 
 const HOUR = 3600e3;
@@ -45,12 +45,32 @@ test('outfits need two ranked members and sum their kills', () => {
   assert.deepEqual([r.outfits[0].tag, r.outfits[0].k, r.outfits[0].members], ['AAA', 3, 2]);
 });
 
-test('hourly history buckets kills into the last N hours', () => {
-  const r = computeStats(fixture(), 1000, NOW - 24 * HOUR, NOW);
-  assert.equal(r.hourly.length, 24);
-  assert.equal(r.hourly.reduce((s, b) => s + b.kills, 0), 4);
-  assert.equal(r.hourly.at(-2).kills, 2); // kills 1-2 h ago
-  assert.equal(r.hourly.at(-1).kills, 0);
+test('population counts the characters online per empire, from logins not kills', () => {
+  const s = fixture();
+  s.online = { 1: NOW - HOUR, 2: NOW - HOUR, 3: NOW - HOUR, 9: NOW - HOUR };
+  s.onlineW = { 1: 1000, 2: 1000, 3: 2000, 9: 1000 }; // 3 is on the other world, 9 has no character cached
+  assert.deepEqual(onlineByFaction(s, 1000), { vs: 1, nc: 1, tr: 0, ns: 0 });
+  assert.deepEqual(onlineByFaction(s, 2000), { vs: 0, nc: 0, tr: 1, ns: 0 });
+  assert.deepEqual(populationSample(s, [1000, 2000], NOW), [[NOW, 1000, 1, 1, 0, 0], [NOW, 2000, 0, 0, 1, 0]]);
+});
+
+test('the population series replays the recorded samples and ends on the live count', () => {
+  const s = fixture();
+  s.online = { 1: NOW - HOUR };
+  s.onlineW = { 1: 1000 };
+  s.pop = [
+    [NOW - 30 * HOUR, 1000, 9, 9, 9, 9], // older than the window
+    [NOW - 2 * HOUR, 1000, 40, 50, 60, 10],
+    [NOW - HOUR, 2000, 1, 1, 1, 1], // the other world
+    [NOW - HOUR, 1000, 42, 52, 62, 12],
+  ];
+  const r = computeStats(s, 1000, NOW - 24 * HOUR, NOW);
+  assert.deepEqual(r.population, [
+    { t: NOW - 2 * HOUR, vs: 40, nc: 50, tr: 60, ns: 10 },
+    { t: NOW - HOUR, vs: 42, nc: 52, tr: 62, ns: 12 },
+    { t: NOW, vs: 1, nc: 0, tr: 0, ns: 0 },
+  ]);
+  assert.equal(r.hourly, undefined); // the live board charts population now, not kills per hour
 });
 
 test('shorter windows exclude older kills', () => {

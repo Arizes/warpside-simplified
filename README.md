@@ -1,7 +1,7 @@
 # Warpside Simplified
 
 Live PlanetSide 2 leaderboards for the PS4 servers **Genudine** (US) and **Ceres** (EU): top players and outfits
-by empire, kills per hour over a rolling 24-hour window, and a live continent map with territory, base captures
+by empire, a live player count per empire over a rolling 24-hour window, and a live continent map with territory, base captures
 and estimated fights.
 
 Today it runs entirely on Cloudflare's free tier: one Worker serves the page and the API, and one Durable
@@ -65,7 +65,7 @@ Browser ──▶ Worker ──▶ /api/* ────────────�
 | `src/ingest.js` | Applies a parsed record to the state |
 | `src/census.js` | Batched, cached, backed-off Census lookups |
 | `src/store.js` | Event log, pruning, compressed chunked snapshots |
-| `src/stats.js` | Leaderboards, outfits, faction split, hourly history, player detail |
+| `src/stats.js` | Leaderboards, outfits, faction split, player count per empire, player detail |
 | `src/map.js` | Map state: ownership, base presence, fight detection, captures |
 | `public/map.js` | The map view: tiles, hex territories, influence cloud, lattice, battle bubbles, region card, zoom sounds |
 | `public/map-logic.js` | Pure map helpers (cut-off territory, bubble rate, base labels), unit tested |
@@ -88,6 +88,13 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
 - **One object for both servers.** Free-plan duration is 13,000 GB-s per day; one always-on object uses about
   11,000. A second object would exceed it.
 - **History is a rolling window**, not an archive.
+- **The live board charts the player count, not kills per hour.** Kill rate is already in the boards and the
+  KPM column. The population comes from the `PlayerLogin` and `PlayerLogout` events Daybreak publishes:
+  `state.online` is the set of characters currently logged in, anyone seen in a kill event is added to it
+  (their login may predate the tracker), and the collector records one sample per world per minute into
+  `state.pop`, kept for the same 24 hours as the events. A session running more than 18 hours is treated as a
+  logout that was missed and swept out. Characters already online when the tracker started are not counted
+  until their next login, so the count can read low, never high, and the page says so.
 - **Servers are configuration** in `src/config.js`.
 - **Untrusted data stays at the edges.** Stream frames are parsed defensively, Census IDs are validated as
   digit strings before they enter a query, API parameters are allow-listed, the browser builds DOM with
