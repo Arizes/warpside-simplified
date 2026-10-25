@@ -31,6 +31,13 @@ labels must therefore not be treated as evidence of actual deployment or destruc
 [Honu's cleanup](https://github.com/varunda/honu/blob/master/Services/Hosted/EventCleanupService.cs) expires
 NPCs after five minutes without activity; this is an inactivity heuristic, not proof of destruction.
 
+Honu's [data builder](https://github.com/varunda/honu/blob/master/Services/Repositories/DataBuilderRepository.cs)
+sets `SecondsAlive` to the difference between current UTC time and `FirstSeenAt`.
+Its [table](https://github.com/varunda/honu/blob/master/src/view/watchtower/RealtimeData.vue) labels
+`FirstSeenAt` as "Deployed at" and `SecondsAlive` as "Lifespan". This verifies an elapsed observation
+timer is possible; it does not verify a deployment flag. Warpside displays this as "Observed lifespan",
+alongside "First seen" and "Last spawn", and does not claim the NPC is currently deployed.
+
 No base-spawn event, entity position stream, deployment event or instance-to-facility lookup was verified.
 VehicleDestroy includes a facility, vehicle type and owner, but no instance identifier that safely joins
 to the `other_id` spawn NPC. Owner capture/defend activity and territory control do not establish where

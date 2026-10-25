@@ -150,7 +150,13 @@ at most once per five minutes per active owner. They do not assert outfit owners
 verified official outfit-decal mapping exists in the PS4 data, so the existing Census faction emblems
 are used. Base-spawn counts, base coordinates, deployment timestamps and actual lifespans are unavailable;
 those values are not estimated. Explicit "View continent map" links open the whole recorded continent;
-rows do not imply an exact spawn/base location is known. Research, live PS4
+rows do not imply an exact spawn/base location is known.
+
+The table shows first observed spawn, time since that first observation ("Observed lifespan"),
+and time since the last spawn. Those counters advance locally once a second from the API's clock, with
+no extra requests, and do not assert that the object is still deployed or alive. Like Honu's calculation,
+the observed lifespan includes idle time while an entry remains on the board.
+Research, live PS4
 verification and Honu source references: [`docs/research/spawns.md`](docs/research/spawns.md).
 
 ## Credits

@@ -2,6 +2,7 @@
 // so nodes are built with textContent only: no innerHTML anywhere.
 import { apiBase } from './api-base.js';
 import { createMap } from './map.js';
+import { spawnDuration, spawnNow } from './spawn-time.js';
 
 const $ = (id) => document.getElementById(id);
 const SVG = 'http://www.w3.org/2000/svg';
@@ -24,6 +25,8 @@ const view = {
   outfits: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
 };
 let timer;
+let spawnTimer;
+let spawnClock = null;
 let map = null;
 
 function safeGet(k) {
@@ -205,7 +208,8 @@ const RENDER = {
 const ZONES = { 2: 'Indar', 4: 'Hossin', 6: 'Amerish', 8: 'Esamir', 344: 'Oshur' };
 function renderSpawns() {
   const board = view.data?.spawns;
-  const missing = () => el('span', { class: 'sub', text: '—', title: 'Not available from the spawn event' });
+  const timeCell = (ts, kind) => el('span', { 'data-spawn-time': ts, 'data-spawn-kind': kind,
+    title: kind === 'age' ? 'Time since first observed spawn, including idle time. This does not confirm deployment or survival.' : stamp(ts) });
   const outfit = (p) => {
     // No verified outfit-to-decal mapping exists in the PS4 Census dataset: official faction fallback.
     const label = p.outfit ? `${p.outfit.tag ? `[${p.outfit.tag}] ` : ''}${p.outfit.name}` : 'Outfit unknown';
@@ -232,11 +236,21 @@ function renderSpawns() {
       { label: 'Total observed', n: true, cell: (p) => num(p.total) },
       { label: 'Spawns / min', n: true, cell: (p) => p.spm.toFixed(2) },
       { label: 'First seen', n: true, cell: (p) => el('time', { datetime: new Date(p.firstSeen).toISOString(), title: stamp(p.firstSeen), text: hhmm(p.firstSeen) }) },
-      { label: 'Deployed', n: true, cell: missing },
-      { label: 'Lifespan', n: true, cell: missing },
+      { label: 'Last spawn', n: true, cell: (p) => timeCell(p.lastSeen, 'last') },
+      { label: 'Observed lifespan', n: true, cell: (p) => timeCell(p.firstSeen, 'age') },
     ], rows: board?.rows || [],
     empty: 'No Sunderer or Router spawn bonuses observed in the last 5 minutes. Base spawns are not exposed by this feed.',
   }));
+  updateSpawnTimes();
+}
+
+function updateSpawnTimes() {
+  if (!spawnClock || view.tab !== 'live' || document.hidden) return;
+  const now = spawnNow(spawnClock, performance.now());
+  for (const cell of $('spawns-table').querySelectorAll('[data-spawn-time]')) {
+    const elapsed = spawnDuration(now - Number(cell.dataset.spawnTime));
+    cell.textContent = cell.dataset.spawnKind === 'last' ? `${elapsed} ago` : elapsed;
+  }
 }
 
 async function openSpawn(p) {
@@ -464,6 +478,7 @@ async function load() {
     return;
   }
   view.data = data;
+  spawnClock = data.spawns ? { serverNow: data.spawns.now, receivedAt: performance.now() } : null;
   setAlert('');
   document.body.classList.remove('loading');
   try {
@@ -560,5 +575,7 @@ async function init() {
   await load();
   clearInterval(timer);
   timer = setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
+  clearInterval(spawnTimer);
+  spawnTimer = setInterval(updateSpawnTimes, 1000);
 }
 init();
