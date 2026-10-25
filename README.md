@@ -4,9 +4,15 @@ Live PlanetSide 2 leaderboards for the PS4 servers **Genudine** (US) and **Ceres
 by empire, kills per hour over a rolling 24-hour window, and a live continent map with territory, base captures
 and estimated fights.
 
-It runs entirely on Cloudflare's free tier: one Worker serves the page and the API, and one Durable Object
-collects the kill stream and keeps the last 24 hours. No database, no server to maintain, no runtime
+Today it runs entirely on Cloudflare's free tier: one Worker serves the page and the API, and one Durable
+Object collects the kill stream and keeps the last 24 hours. No database, no server to maintain, no runtime
 dependencies.
+
+> **Planned move (decided 2026-10-25):** the backend API, event listener, background jobs and a PostgreSQL
+> database move to **Railway** (Hobby), packaged with Docker so the provider can be changed; **Cloudflare**
+> keeps the frontend, DNS, caching and security. This adds long-term history and makes later player profiles
+> possible, with the same API and features. Plan and phases: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> The rest of this README describes the code as it runs now.
 
 > The earlier, much larger Postgres-based design is archived at
 > [Arizes/warpside](https://github.com/Arizes/warpside). This project started from
@@ -92,7 +98,8 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   seen in events at that base, shown as a floor ("8+ seen"). Daybreak does not publish per-base populations and
   players who are only present never appear in its data, so these are never presented as the in-game figures.
 
-Limits, risks and deployment: [`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
+Target architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Limits, risks and deployment:
+[`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
 [`docs/research/census-api.md`](docs/research/census-api.md).
 
 ## Credits

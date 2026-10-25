@@ -1,7 +1,7 @@
 {
   "name": "warpside-simplified",
   "version": "3.0.0",
-  "description": "Live PlanetSide 2 leaderboards for the PS4 servers, with a rolling 24-hour history, on Cloudflare Workers",
+  "description": "Live PlanetSide 2 leaderboards for the PS4 servers, with a rolling 24-hour history",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -12,6 +12,8 @@
     "assets": "node scripts/fetch-map-assets.mjs",
     "predev": "node scripts/fetch-map-assets.mjs",
     "dev": "wrangler dev",
+    "start": "node src/server.js",
+    "dev:node": "node --env-file-if-exists=.env --watch src/server.js",
     "predeploy": "node scripts/fetch-map-assets.mjs",
     "deploy": "wrangler deploy",
     "test": "node --test test/"

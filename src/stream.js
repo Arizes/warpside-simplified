@@ -3,9 +3,12 @@ import { KILL, TEAMKILL, SUICIDE } from './store.js';
 const CHARACTER_EVENTS = ['Death', 'PlayerLogin', 'PlayerLogout', 'PlayerFacilityCapture', 'PlayerFacilityDefend'];
 const WORLD_EVENTS = ['FacilityControl'];
 
-/** Workers open outbound WebSockets with fetch, which takes an https URL plus an Upgrade header. */
-export function streamUrl(env, serviceId) {
-  return `https://push.planetside2.com/streaming?environment=${env}&service-id=s:${serviceId}`;
+/**
+ * Workers open outbound WebSockets with fetch, which takes an https URL plus an Upgrade header;
+ * Node's WebSocket needs the wss scheme for the same endpoint.
+ */
+export function streamUrl(env, serviceId, scheme = 'https') {
+  return `${scheme}://push.planetside2.com/streaming?environment=${env}&service-id=s:${serviceId}`;
 }
 
 /**

@@ -1,0 +1,16 @@
+.git/
+.github/
+node_modules/
+.wrangler/
+data/
+test/
+docs/
+*.md
+.dev.vars
+.dev.vars.example
+.env
+.env.*
+.push.bundle
+wrangler.jsonc
+public/maps/
+public/audio/
