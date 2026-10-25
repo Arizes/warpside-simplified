@@ -7,17 +7,31 @@ Cloudflare-only version described under [Current deployment](#current-deployment
 
 ## Target deployment: Railway + Cloudflare
 
-Available once migration phase 1 (Node server and `Dockerfile`) has landed.
+### What is already set up (2026-10-25)
+
+Railway project **warpside** (`ad435cc4-f25c-49f0-b02e-f73f9bd8fc5c`), environment `production`, one service
+`warpside-simplified` built from this repo's `Dockerfile` on branch `main`, auto-deploying on push:
+
+- **1 replica, US West, Serverless off.** Both matter: a second replica would ingest every event twice, and
+  scale-to-zero would stop the collector between requests.
+- **Volume** `warpside-simplified-volume` mounted at `/data`, with `DATA_DIR=/data` so the snapshot survives
+  redeploys. `RETAIN_HOURS=24`.
+- **Health check** `/health`; restart policy on failure.
+- **Custom domain** `api.warpside2.com` on port 8080, with the Cloudflare DNS records created: `api` CNAME to
+  the Railway target and the `_railway-verify.api` TXT record.
+
+Still to do: set `CENSUS_SERVICE_ID` (below), then the frontend and edge steps, then phase 2's Postgres.
 
 ### Railway (backend)
 
-1. Create a project on the Hobby plan with two services: **PostgreSQL** (Railway template) and **app**
-   (deploy from the GitHub repo; Railway builds the `Dockerfile`).
-2. `app` variables: `DATABASE_URL` (reference the Postgres service's private URL), `CENSUS_SERVICE_ID`,
-   `PUBLIC_ORIGIN=https://warpside2.com`, `RAW_RETENTION_DAYS=30`, the origin secret header value, and the
-   backup storage credentials. Never commit any of them.
-3. Keep **replicas at 1** (two listeners would double-count events). Set a health check on `/health`.
-4. Add the custom domain `api.warpside2.com` to the `app` service and note the CNAME target.
+1. Set **`CENSUS_SERVICE_ID`** in the service's variables. Without it the collector runs against Census's
+   shared `example` id, which is rate-limited to the point of uselessness: the logs fill with
+   `Census Missing Service ID` and no names, weapons or map ownership resolve. The deploy otherwise succeeds,
+   so check the logs rather than the deploy status.
+2. Phase 2 adds the **PostgreSQL** service and `DATABASE_URL` (reference the Postgres service's private URL),
+   plus `RAW_RETENTION_DAYS=30`.
+3. Phase 4 adds `PUBLIC_ORIGIN=https://warpside2.com`, `API_ORIGIN` and `ORIGIN_SECRET`.
+4. Keep **replicas at 1** and Serverless **off**, whatever else changes.
 5. Enable Postgres backups if the plan offers them, and confirm the nightly off-provider dump runs
    (see [`ARCHITECTURE.md`](ARCHITECTURE.md#backups)).
 
@@ -25,7 +39,9 @@ Available once migration phase 1 (Node server and `Dockerfile`) has landed.
 
 1. `warpside2.com` zone on Cloudflare (Free). Deploy `public/` as Workers static assets (no Worker script,
    no Durable Object) on `warpside2.com`.
-2. DNS: `api` CNAME to the Railway target, **proxied**.
+2. DNS: the `api` CNAME is created **unproxied**, because Railway cannot complete its TLS challenge through
+   the proxy. Once Railway shows the domain as issued, switch it to proxied; the zone's SSL mode must stay
+   **Full** or **Full (strict)**, never Flexible, or the API answers in a redirect loop.
 3. Cache Rule for `api.warpside2.com/api/*` (respect origin `s-maxage`); bypass for `/health`.
 4. Rate-limiting rule on `/api/*`, and a Transform Rule that adds the origin secret header.
 5. Check: the page loads, `https://api.warpside2.com/health` shows both streams connected and events rising,
