@@ -8,11 +8,14 @@ Today it runs entirely on Cloudflare's free tier: one Worker serves the page and
 Object collects the kill stream and keeps the last 24 hours. No database, no server to maintain, no runtime
 dependencies.
 
-> **Planned move (decided 2026-10-25):** the backend API, event listener, background jobs and a PostgreSQL
-> database move to **Railway** (Hobby), packaged with Docker so the provider can be changed; **Cloudflare**
-> keeps the frontend, DNS, caching and security. This adds long-term history and makes later player profiles
-> possible, with the same API and features. Plan and phases: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-> The rest of this README describes the code as it runs now.
+> **Move in progress (decided 2026-10-25):** the backend API, event listener, background jobs and a
+> PostgreSQL database move to **Railway** (Hobby), packaged with Docker so the provider can be changed;
+> **Cloudflare** keeps the frontend, DNS, caching and security. Plan and phases:
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+>
+> **Phase 1 is done:** the collector also runs as a plain Node process (`npm start`, or `docker compose up`)
+> with no Cloudflare runtime, serving the same API. Both runtimes share `src/collector.js`, so there is one
+> implementation. Phase 2 adds PostgreSQL; the Worker is retired in phase 4.
 
 > The earlier, much larger Postgres-based design is archived at
 > [Arizes/warpside](https://github.com/Arizes/warpside). This project started from
@@ -26,8 +29,16 @@ Requires Node 22+.
 npm install
 npm run assets                   # map tiles and sounds (about 120 MB, not in git); dev and deploy also run it
 cp .dev.vars.example .dev.vars   # add your CENSUS_SERVICE_ID (free: https://census.daybreakgames.com/#devSignup)
-npm run dev                      # http://localhost:8787
+npm run dev                      # Worker + Durable Object, http://localhost:8787
 npm test
+```
+
+Or run the Node backend, which is what Railway will run:
+
+```sh
+cp .env.example .env             # same CENSUS_SERVICE_ID
+npm start                        # http://localhost:8080  (npm run dev:node to reload on change)
+docker compose up --build        # the same image Railway builds, plus Postgres for phase 2
 ```
 
 Leaderboards start empty and fill as kills arrive; the 24-hour history builds up the longer it runs.
@@ -45,8 +56,11 @@ Browser ──▶ Worker ──▶ /api/* ────────────�
 
 | File | Job |
 |---|---|
-| `src/worker.js` | Entry point: routes `/api/*` and `/health` to the Tracker, cron safety net |
-| `src/tracker.js` | The Durable Object: stream connections, state, snapshots, keep-alive alarm |
+| `src/collector.js` | The collector, runtime-neutral: connections, event log, map, API, watchdog tick |
+| `src/worker.js` | Cloudflare entry point: routes `/api/*` and `/health` to the Tracker, cron safety net |
+| `src/tracker.js` | Cloudflare wrapper: Durable Object storage, WebSocket over fetch, keep-alive alarm |
+| `src/server.js` | Node entry point: HTTP server, static files, graceful shutdown (what Railway runs) |
+| `src/node-store.js` | Snapshot, map and geometry as files in `DATA_DIR` (replaced by Postgres in phase 2) |
 | `src/stream.js` | Stream URL, subscription message and message parsing |
 | `src/ingest.js` | Applies a parsed record to the state |
 | `src/census.js` | Batched, cached, backed-off Census lookups |
@@ -65,6 +79,9 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
 
 ### Design decisions
 
+- **One collector, two runtimes.** `src/collector.js` holds all the behaviour and is given a store, a way
+  to open a socket and a `waitUntil`; `tracker.js` supplies the Cloudflare versions and `server.js` the Node
+  ones. There is no second implementation to keep in step during the migration.
 - **One Durable Object, no database.** 24 hours of PS4 kills is small. The object holds it in memory and
   writes a gzipped snapshot in chunks to its own storage, so a restart loses about a minute. D1, KV, R2 and
   Queues are deliberately not used.

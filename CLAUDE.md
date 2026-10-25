@@ -56,6 +56,8 @@ Census request volume. Never run more than one replica of the backend (it would 
 | Command | |
 |---|---|
 | `npm run dev` | Local Worker with a real Durable Object (reads `.dev.vars`) |
+| `npm start` | The Node backend, as Railway runs it (reads `.env`); `npm run dev:node` reloads on change |
+| `docker compose up --build` | The same image Railway builds, plus Postgres for phase 2 |
 | `npm test` | Unit tests (`node --test`, no network) |
 | `npm run deploy` | Deploy to Cloudflare |
 | `npm run assets` | Download map tiles and sounds into `public/` (also runs before `dev` and `deploy`) |
@@ -66,5 +68,6 @@ Tests never call the real Census or stream. Map tiles and sounds are not in git:
 ## Definition of done
 
 Behaviour is covered by a test, `npm test` passes, `npm audit` is clean, and the README or `docs/` are
-updated if behaviour, limits or setup changed. For changes to `src/tracker.js`, also run `npm run dev`
+updated if behaviour, limits or setup changed. For changes to `src/collector.js`, `src/tracker.js` or
+`src/server.js`, also run the runtime(s) you touched (`npm run dev` for the Worker, `npm start` for Node)
 and confirm `/health` shows both streams connected and events arriving.

@@ -1,8 +1,8 @@
 # Architecture: Railway backend, Cloudflare edge
 
-Decided by the owner on 2026-10-25. This is the **target** architecture. The code still runs on the original
-Cloudflare Worker and Durable Object design (see `README.md`) until the migration below is complete; each
-phase keeps the site working.
+Decided by the owner on 2026-10-25. This is the **target** architecture; the migration below runs in phases
+and each one keeps the site working. **Phase 1 is done:** the backend runs as a plain Node process in Docker
+as well as on Cloudflare, from one shared collector. The live site is still the Cloudflare version.
 
 ## Split of responsibilities
 
@@ -110,10 +110,13 @@ some credit. Check current prices on Railway's pricing page before relying on an
 Each phase is shippable on its own and keeps all current functionality (leaderboards, player detail, map,
 `/health`, the same API contract).
 
-1. **Port the runtime.** Replace the Durable Object with a plain Node HTTP server (`src/server.js`) that hosts
-   the same API, the stream listener and timers. `src/tracker.js` loses its `cloudflare:workers` import;
-   `stream.js`, `ingest.js`, `stats.js`, `map.js`, `census.js` and `api.js` are reused unchanged where
-   possible. Add `Dockerfile` and `docker-compose.yml`. Tests keep passing.
+1. **Port the runtime. Done 2026-10-25.** The collector moved to `src/collector.js`, which takes a store, an
+   `openSocket` and a `waitUntil` and knows nothing about either platform. `src/tracker.js` is now a thin
+   Cloudflare wrapper (Durable Object storage, WebSocket over `fetch`, alarm) and `src/server.js` a Node one
+   (HTTP server, static files, `setInterval`, SIGTERM save). `src/node-store.js` keeps the snapshot, map and
+   geometry as files in `DATA_DIR`. `Dockerfile`, `.dockerignore`, `docker-compose.yml` and `.env.example`
+   added; `stream.js` takes a scheme so Node can use `wss`. Verified: 50 tests pass, and both runtimes run
+   live with both streams connected and events arriving.
 2. **Add Postgres.** Batched event writes, boot-time reload of the last 24 h, Census reference cache,
    `map_static`. Remove the snapshot code once reload is proven.
 3. **History.** Daily partitions, hourly rollups, retention job, nightly backup and restore drill.

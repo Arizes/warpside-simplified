@@ -7,3 +7,4 @@ public/maps/
 public/audio/
 data/
 !.env.example
+.push.bundle
