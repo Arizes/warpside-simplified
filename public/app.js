@@ -205,10 +205,11 @@ const RENDER = {
 const LINES = [['vs', 1], ['nc', 2], ['tr', 3], ['ns', 4]];
 const RANGES = { '2h': 'last 2 hours', '6h': 'last 6 hours', '24h': 'last 24 hours', '7d': 'last 7 days' };
 const sumOf = (p) => p.vs + p.nc + p.tr + p.ns;
-const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// Clock times are shown on a 12-hour clock everywhere, whatever the viewer's locale defaults to.
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 const dayHour = (t) => `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${hhmm(t)}`;
 // The viewer's own zone, named, so a point on the line is never ambiguous.
-const stamp = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+const stamp = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' });
 
 /** Smallest round number at or above `v`, so the grid lands on readable values. */
 function niceTop(v) {
@@ -331,7 +332,7 @@ function drawChart(target, buckets) {
     r.setAttribute('width', String(Math.max(1, bw - 3)));
     r.setAttribute('height', String(h));
     const t = document.createElementNS(SVG, 'title');
-    t.textContent = `${new Date(b.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${num(b.kills)} kills`;
+    t.textContent = `${hhmm(b.t)} · ${num(b.kills)} kills`;
     r.append(t);
     svg.append(r);
   });
@@ -345,7 +346,7 @@ function drawChart(target, buckets) {
     t.setAttribute('x', String(i * bw + bw / 2));
     t.setAttribute('y', String(H - 3));
     t.setAttribute('text-anchor', 'middle');
-    t.textContent = new Date(b.t).toLocaleTimeString([], { hour: 'numeric' });
+    t.textContent = new Date(b.t).toLocaleTimeString([], { hour: 'numeric', hour12: true });
     svg.append(t);
   });
   target.replaceChildren(svg);

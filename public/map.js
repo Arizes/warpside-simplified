@@ -705,7 +705,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
     rows.push(el('h4', { text: 'Recent captures' }));
     rows.push(caps.length
       ? el('ul', { class: 'captures' }, ...caps.map((c) => el('li', {},
-        el('span', { class: 'ctime', text: new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
+        el('span', { class: 'ctime', text: new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) }),
         el('span', { class: `c${c.to}`, text: FTAG[c.to] || '?' }),
         el('span', { class: 'sub', text: `from ${FTAG[c.from] || '?'}` }),
         c.outfit?.tag ? el('span', { class: `c${c.to}`, text: `[${c.outfit.tag}]` }) : null)))
@@ -786,7 +786,7 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
       return b;
     }) : [el('p', { class: 'empty', text: 'No fights detected on this continent in the last 10 minutes.' })]));
     $('map-captures').replaceChildren(...(live.captures.length ? live.captures.slice(0, 10).map((c) => el('li', {},
-      el('span', { class: 'ctime', text: new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
+      el('span', { class: 'ctime', text: new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) }),
       emblem(c.to, 18),
       el('span', { class: `c${c.to}`, text: name(c.fac) }),
       el('span', { class: 'sub', text: `from ${FTAG[c.from] || '?'}${c.outfit?.tag ? ` · [${c.outfit.tag}]` : ''}` }))) : [el('li', { class: 'empty', text: 'No bases have changed hands here in the last hour.' })]));
