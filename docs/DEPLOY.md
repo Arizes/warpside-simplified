@@ -16,6 +16,11 @@ Railway project **warpside** (`ad435cc4-f25c-49f0-b02e-f73f9bd8fc5c`), environme
   scale-to-zero would stop the collector between requests.
 - **Volume** `warpside-simplified-volume` mounted at `/data`, with `DATA_DIR=/data` so the snapshot survives
   redeploys. `RETAIN_HOURS=24`.
+  A mounted volume keeps its own ownership and overrides the image's, so `/data` arrives owned by root and
+  the unprivileged `node` user cannot write to it. `docker-entrypoint.sh` fixes the ownership while still
+  root and then drops privileges with `su-exec`. Without it every tick logs
+  `EACCES: permission denied, open '/data/map.json.N.tmp'`, the map returns 503 because the continent
+  geometry cannot be cached, and no history survives a restart — while the deploy still reports success.
 - **Health check** `/health`; restart policy on failure.
 - **Custom domain** `api.warpside2.com` on port 8080, with the Cloudflare DNS records created: `api` CNAME to
   the Railway target and the `_railway-verify.api` TXT record.
