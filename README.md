@@ -75,7 +75,9 @@ Browser ──▶ Worker ──▶ /api/* ────────────�
 | `public/` | The dashboard (plain HTML, CSS, ES modules) and `_headers` (CSP) |
 
 API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=<characterId>&window=24h`,
-`/api/map?world=1000[&zone=2]`, `/api/map-static?world=1000&zone=2`, `/api/servers`, `/health`. Windows are `1h`, `6h`, `24h`.
+`/api/population?world=1000&range=2h`, `/api/online?world=1000&empire=1`, `/api/map?world=1000[&zone=2]`,
+`/api/map-static?world=1000&zone=2`, `/api/servers`, `/health`. Windows are `1h`, `6h`, `24h`; chart ranges are
+`2h`, `6h`, `24h`, `7d`; `empire` is `0` for everyone, or `1` VS, `2` NC, `3` TR, `4` NSO.
 
 ### Design decisions
 
@@ -92,9 +94,14 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   KPM column. The population comes from the `PlayerLogin` and `PlayerLogout` events Daybreak publishes:
   `state.online` is the set of characters currently logged in, anyone seen in a kill event is added to it
   (their login may predate the tracker), and the collector records one sample per world per minute into
-  `state.pop`, kept for the same 24 hours as the events. A session running more than 18 hours is treated as a
-  logout that was missed and swept out. Characters already online when the tracker started are not counted
-  until their next login, so the count can read low, never high, and the page says so.
+  `state.pop`. A session running more than 18 hours is treated as a logout that was missed and swept out.
+  Characters already online when the tracker started are not counted until their next login, so the count can
+  read low, never high, and the page says so.
+- **Samples outlive the event log.** A sample is six numbers a minute per world, so a week of them costs far
+  less than an hour of events: `state.pop` is kept for 7 days while the log stays at `RETAIN_HOURS`. That is
+  what lets the chart zoom out past the board's own window. The chart defaults to the last 2 hours and offers
+  6h, 24h and 7d; longer ranges are averaged into at most 180 points. Clicking an empire in the legend lists
+  who the tracker has seen online there.
 - **Servers are configuration** in `src/config.js`.
 - **Untrusted data stays at the edges.** Stream frames are parsed defensively, Census IDs are validated as
   digit strings before they enter a query, API parameters are allow-listed, the browser builds DOM with

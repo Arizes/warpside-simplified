@@ -58,10 +58,21 @@
     <div id="view-live" role="tabpanel" aria-labelledby="tab-live">
       <section class="panel split">
         <div class="popcol">
-          <h2>Player count <small id="pop-note"></small></h2>
+          <div class="pophead">
+            <h2>Player count <small id="pop-note"></small></h2>
+            <div class="seg tiny" id="pop-range" role="group" aria-label="Chart range">
+              <button type="button" data-v="2h">2H</button>
+              <button type="button" data-v="6h">6H</button>
+              <button type="button" data-v="24h">24H</button>
+              <button type="button" data-v="7d">7D</button>
+            </div>
+          </div>
           <div class="poplegend" id="pop-legend"></div>
-          <div class="chart pop" id="chart"></div>
-          <p class="note small">Counted from the logins and logouts Daybreak publishes, sampled once a minute, plus anyone seen fighting. Characters already online when the tracker started are missing until their next login, so the count can read low, never high.</p>
+          <div class="chartwrap">
+            <div class="chart pop" id="chart"></div>
+            <div class="poptip" id="pop-tip" hidden></div>
+          </div>
+          <p class="note small">Counted from the logins and logouts Daybreak publishes, sampled once a minute, plus anyone seen fighting. Characters already online when the tracker started are missing until their next login, so the count can read low, never high. Pick an empire above to see who is online.</p>
         </div>
         <div>
           <h2>Empire share</h2>
@@ -142,6 +153,16 @@
       <div class="chart small" id="p-chart"></div>
       <h3>Top weapons</h3>
       <ul class="weapons" id="p-weapons"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="online" aria-labelledby="o-title">
+    <div class="dlg">
+      <button class="close" id="o-close" aria-label="Close">×</button>
+      <p class="eyebrow" id="o-sub"></p>
+      <h2 id="o-title"></h2>
+      <div class="scroll tall" id="o-list"></div>
+      <p class="note small">Only characters the tracker has seen log in, or seen in a kill, are listed. Anyone already playing when it started is missing until their next login, and "seen online" is measured from that moment, not from when they really logged in.</p>
     </div>
   </dialog>
 

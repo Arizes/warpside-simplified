@@ -8,6 +8,10 @@ export const SERVERS = {
 // Windows the API will serve. The log never holds more than RETAIN_HOURS.
 export const WINDOWS = { '1h': 3600e3, '6h': 6 * 3600e3, '24h': 24 * 3600e3 };
 
+// Ranges the population chart will serve. Samples are a minute apart and far smaller than events,
+// so they are kept for a week (see POP_RETAIN_MS in store.js) while the event log stays at 24 hours.
+export const POP_RANGES = { '2h': 2 * 3600e3, '6h': 6 * 3600e3, '24h': 24 * 3600e3, '7d': 7 * 24 * 3600e3 };
+
 /** Worker bindings arrive as strings; the service ID is a secret. */
 export function loadConfig(env = {}) {
   return {

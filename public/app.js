@@ -17,7 +17,9 @@ const view = {
   tab: 'live',
   world: Number(safeGet('world')) || 1000,
   win: safeGet('window') || '24h',
+  range: safeGet('range') || '2h',
   data: null,
+  pop: null,
   players: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
   outfits: { empire: 0, q: '', sort: { key: 'k', dir: -1 } },
 };
@@ -136,7 +138,7 @@ function renderLive(s = view.data) {
   }
   $('factions').replaceChildren(bar, el('div', { class: 'flegend' }, ...s.factions.map((f) =>
     el('span', {}, emblem(f.f), el('b', { class: `c${f.f}`, text: TAG[f.f] }), `${num(f.k)} kills`))));
-  drawPopulation($('chart'), s.population);
+  drawPopulation();
 }
 
 /* ---------- players tab and the outfit viewer ---------- */
@@ -201,8 +203,12 @@ const RENDER = {
 
 /* ---------- population chart ---------- */
 const LINES = [['vs', 1], ['nc', 2], ['tr', 3], ['ns', 4]];
-const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const RANGES = { '2h': 'last 2 hours', '6h': 'last 6 hours', '24h': 'last 24 hours', '7d': 'last 7 days' };
 const sumOf = (p) => p.vs + p.nc + p.tr + p.ns;
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const dayHour = (t) => `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${hhmm(t)}`;
+// The viewer's own zone, named, so a point on the line is never ambiguous.
+const stamp = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 
 /** Smallest round number at or above `v`, so the grid lands on readable values. */
 function niceTop(v) {
@@ -215,76 +221,96 @@ function svgEl(tag, props) {
   for (const [k, v] of Object.entries(props)) n.setAttribute(k, String(v));
   return n;
 }
-/** Legend counts for one sample: "All 285" and a chip per empire. */
-function popLegend(sample, at) {
-  const box = $('pop-legend');
-  if (!box) return;
-  box.replaceChildren(
-    el('span', { class: 'all' }, el('b', { text: num(sumOf(sample)) }), el('span', { text: at ? `online · ${at}` : 'online' })),
-    ...LINES.map(([key, f]) => el('span', { class: `pop-${key}` }, el('i', {}), el('b', { text: num(sample[key]) }), el('span', { text: TAG[f] }))),
+/** The live counts, as buttons: each one opens the list of who is online. */
+function popLegend(sample) {
+  const chip = (empire, label, value, cls) => {
+    const b = el('button', { type: 'button', class: `popchip ${cls}`, title: empire ? `Who is online on ${EMPIRE[empire] || 'Nanite Systems'}` : 'Who is online' },
+      el('i', {}), el('b', { text: num(value) }), el('span', { text: label }));
+    b.addEventListener('click', () => openOnline(empire));
+    return b;
+  };
+  $('pop-legend').replaceChildren(
+    chip(0, 'online', sumOf(sample), 'all'),
+    ...LINES.map(([key, f]) => chip(f, TAG[f], sample[key], `pop-${key}`)),
   );
 }
-function drawPopulation(target, samples) {
-  if (!samples?.length) {
-    target.replaceChildren(el('p', { class: 'empty', text: 'No population recorded yet. The line fills in a minute after the tracker starts.' }));
+function drawPopulation(target = $('chart'), series = view.pop) {
+  $('pop-note').textContent = RANGES[view.range];
+  if (!series?.length) {
+    target.replaceChildren(el('p', { class: 'empty', text: 'No population recorded for this range yet. The line fills in a point a minute.' }));
     popLegend({ vs: 0, nc: 0, tr: 0, ns: 0 });
     return;
   }
+  popLegend(series.at(-1));
   const W = Math.max(320, Math.round(target.clientWidth) || 720);
   const H = 190, padL = 36, padR = 6, padT = 10, padB = 20;
-  const top = niceTop(Math.max(...samples.flatMap((p) => LINES.map(([k]) => p[k]))));
-  const x = (i) => padL + ((W - padL - padR) * i) / Math.max(1, samples.length - 1);
+  const top = niceTop(Math.max(...series.flatMap((p) => LINES.map(([k]) => p[k]))));
+  const x = (i) => padL + ((W - padL - padR) * i) / Math.max(1, series.length - 1);
   const y = (v) => padT + (H - padT - padB) * (1 - v / top);
 
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img' });
-  svg.setAttribute('aria-label', `Players online per empire over the window, peak ${num(top)} on a single empire`);
+  svg.setAttribute('aria-label', `Players online per empire, ${RANGES[view.range]}, peak ${num(top)} on a single empire`);
   for (const v of [0, top / 2, top]) {
     svg.append(svgEl('line', { class: 'grid', x1: padL, x2: W - padR, y1: y(v), y2: y(v) }));
     const label = svgEl('text', { class: 'ylab', x: padL - 7, y: y(v) + 4, 'text-anchor': 'end' });
     label.textContent = num(Math.round(v));
     svg.append(label);
   }
-  const stride = Math.ceil(samples.length / 6);
-  samples.forEach((p, i) => {
-    if (i % stride || i > samples.length - stride / 2) return;
-    const t = svgEl('text', { class: 'xlab', x: x(i), y: H - 5, 'text-anchor': 'middle' });
-    t.textContent = hhmm(p.t);
+  const at = series.at(-1).t - series[0].t > 36 * 3600e3 ? dayHour : hhmm;
+  const stride = Math.ceil(series.length / 6);
+  series.forEach((p, i) => {
+    if (i % stride || i > series.length - stride / 2) return;
+    // The first label would hang off the left edge if it were centred on its point.
+    const t = svgEl('text', { class: 'xlab', x: i ? x(i) : padL, y: H - 5, 'text-anchor': i ? 'middle' : 'start' });
+    t.textContent = at(p.t);
     svg.append(t);
   });
   for (const [key, f] of LINES) {
-    const d = samples.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
+    const d = series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
     const path = svgEl('path', { class: `line pop-${key}`, d, 'vector-effect': 'non-scaling-stroke' });
     const title = document.createElementNS(SVG, 'title');
-    title.textContent = `${TAG[f]} · now ${num(samples.at(-1)[key])}, peak ${num(Math.max(...samples.map((p) => p[key])))}`;
+    title.textContent = `${TAG[f]} · now ${num(series.at(-1)[key])}, peak ${num(Math.max(...series.map((p) => p[key])))}`;
     path.append(title);
     svg.append(path);
   }
 
-  // Hover readout: a guide line plus dots, with the legend following the pointer.
+  // Hover readout: a guide line, a dot per empire and a tooltip with the full local timestamp.
+  const tip = $('pop-tip');
   const guide = svgEl('line', { class: 'guide', x1: 0, x2: 0, y1: padT, y2: H - padB, visibility: 'hidden' });
   const dots = LINES.map(([key]) => svgEl('circle', { class: `dot pop-${key}`, r: 3.2, cx: 0, cy: 0, visibility: 'hidden' }));
   svg.append(guide, ...dots);
-  const reset = () => {
+  const hide = () => {
     guide.setAttribute('visibility', 'hidden');
     for (const d of dots) d.setAttribute('visibility', 'hidden');
-    popLegend(samples.at(-1), 'now');
+    tip.hidden = true;
   };
   svg.addEventListener('pointermove', (ev) => {
     const box = svg.getBoundingClientRect();
-    const i = Math.min(samples.length - 1, Math.max(0, Math.round((((ev.clientX - box.left) / box.width) * W - padL) / ((W - padL - padR) / Math.max(1, samples.length - 1)))));
+    const i = Math.min(series.length - 1, Math.max(0, Math.round((((ev.clientX - box.left) / box.width) * W - padL) / ((W - padL - padR) / Math.max(1, series.length - 1)))));
+    const p = series[i];
     guide.setAttribute('x1', String(x(i)));
     guide.setAttribute('x2', String(x(i)));
     guide.setAttribute('visibility', 'visible');
     dots.forEach((dot, n) => {
       dot.setAttribute('cx', String(x(i)));
-      dot.setAttribute('cy', String(y(samples[i][LINES[n][0]])));
+      dot.setAttribute('cy', String(y(p[LINES[n][0]])));
       dot.setAttribute('visibility', 'visible');
     });
-    popLegend(samples[i], hhmm(samples[i].t));
+    tip.replaceChildren(
+      el('p', { class: 'when', text: stamp(p.t) }),
+      ...LINES.map(([key, f]) => el('p', { class: `row pop-${key}` }, el('i', {}), el('span', { text: TAG[f] }), el('b', { text: num(p[key]) }))),
+      el('p', { class: 'row all' }, el('span', { text: 'All' }), el('b', { text: num(sumOf(p)) })),
+    );
+    tip.hidden = false;
+    const wrap = target.parentElement.getBoundingClientRect();
+    const left = ev.clientX - wrap.left + 16;
+    const top_ = ev.clientY - wrap.top - tip.offsetHeight - 12;
+    tip.style.left = `${Math.max(0, Math.min(left, wrap.width - tip.offsetWidth))}px`;
+    tip.style.top = `${Math.max(0, top_ < 0 ? ev.clientY - wrap.top + 18 : top_)}px`;
   });
-  svg.addEventListener('pointerleave', reset);
+  svg.addEventListener('pointerleave', hide);
   target.replaceChildren(svg);
-  reset();
+  hide();
 }
 
 /* ---------- chart ---------- */
@@ -331,7 +357,6 @@ function renderSummary(s) {
   $('t-kills').textContent = num(s.factions.reduce((a, f) => a + f.k, 0));
   $('t-players').textContent = num(s.activePlayers);
   $('t-since').textContent = clock(s.now - Math.max(s.trackedSince, s.since));
-  $('pop-note').textContent = s.population?.length ? `${hhmm(s.population[0].t)} – now` : '';
   const live = s.stream === 'connected' && s.feedOnline !== false;
   $('status').className = `pill ${live ? 'live' : 'down'}`;
   $('status').lastElementChild.textContent = live ? 'Live' : s.stream === 'connected' ? 'Daybreak feed offline' : 'Reconnecting';
@@ -341,7 +366,7 @@ let resizeTimer;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    if (view.tab === 'live' && view.data) drawPopulation($('chart'), view.data.population);
+    if (view.tab === 'live' && view.pop) drawPopulation();
   }, 150);
 });
 function show(tab) {
@@ -361,10 +386,21 @@ function setAlert(msg) {
   $('alert').hidden = !msg;
   $('alert').textContent = msg || '';
 }
+/** The population series for the chosen range. Kept apart from the board so the two ranges differ. */
+async function loadPopulation(redraw = true) {
+  try {
+    const r = await api(`/api/population?world=${view.world}&range=${view.range}`);
+    view.pop = r.points;
+  } catch {
+    return; // the board's own call reports an outage; keep showing the last line
+  }
+  if (redraw && view.tab === 'live') drawPopulation();
+}
+
 async function load() {
   let data;
   try {
-    data = await api(`/api/stats?world=${view.world}&window=${view.win}`);
+    [data] = await Promise.all([api(`/api/stats?world=${view.world}&window=${view.win}`), loadPopulation(false)]);
   } catch {
     $('status').className = 'pill down';
     $('status').lastElementChild.textContent = 'Tracker unreachable';
@@ -397,6 +433,30 @@ async function openPlayer(id) {
   } catch { /* player left the window between refreshes: ignore */ }
 }
 
+async function openOnline(empire) {
+  try {
+    const r = await api(`/api/online?world=${view.world}&empire=${empire}`);
+    $('o-title').textContent = empire ? EMPIRE[empire] || 'Nanite Systems' : 'Everyone online';
+    $('o-title').className = empire ? `c${empire}` : '';
+    $('o-sub').textContent = `${num(r.total)} online · ${view.data?.server || ''}`;
+    $('o-list').replaceChildren(buildTable({
+      cols: [
+        { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
+        { label: 'Player', cell: who },
+        { label: 'Outfit', cell: (p) => el('span', { text: p.outfit ? `${p.tag ? `[${p.tag}] ` : ''}${p.outfit}` : '–' }) },
+        { label: 'BR', n: true, cell: (p) => (p.br ? `${p.br}${p.asp ? `~${p.asp}` : ''}` : '–') },
+        { label: 'Seen online', n: true, cell: (p) => clock(r.now - p.since) },
+      ],
+      rows: r.players.map((p) => ({ ...p, online: true })),
+      onRow: (p) => openPlayer(p.id),
+      empty: 'Nobody has been seen log in here yet. The list fills in as players come and go.',
+    }));
+    if (!$('online').open) $('online').showModal();
+  } catch {
+    setAlert('Could not load who is online. Try again in a moment.');
+  }
+}
+
 function segment(container, current, onPick) {
   const buttons = [...container.querySelectorAll('button')];
   const mark = (value) => buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(value))));
@@ -412,9 +472,11 @@ async function init() {
     $('world').replaceChildren(...servers.map((s) => el('button', { type: 'button', 'data-v': String(s.id), title: s.region, text: s.name })));
   } catch { /* the stats call below reports the outage */ }
   map = createMap({ $, el, api, emblem, getWorld: () => view.world });
-  segment($('world'), view.world, (v) => { view.world = Number(v); safeSet('world', v); load(); map.worldChanged(); });
+  segment($('world'), view.world, (v) => { view.world = Number(v); safeSet('world', v); view.pop = null; load(); map.worldChanged(); });
   if (!['1h', '6h', '24h'].includes(view.win)) view.win = '24h';
   segment($('window'), view.win, (v) => { view.win = v; safeSet('window', v); load(); });
+  if (!Object.hasOwn(RANGES, view.range)) view.range = '2h';
+  segment($('pop-range'), view.range, (v) => { view.range = v; safeSet('range', v); loadPopulation(); });
 
   // Tabs: click or arrow keys; the hash makes a tab linkable and keeps back/forward working.
   const tabs = TABS.map((t) => $(`tab-${t}`));
@@ -434,8 +496,10 @@ async function init() {
   for (const key of ['players', 'outfits']) {
     $(`${key}-q`).addEventListener('input', (e) => { view[key].q = e.target.value.trim(); RENDER[key](); });
   }
-  $('p-close').addEventListener('click', () => $('player').close());
-  $('player').addEventListener('click', (e) => { if (e.target === $('player')) $('player').close(); });
+  for (const [dlg, close] of [['player', 'p-close'], ['online', 'o-close']]) {
+    $(close).addEventListener('click', () => $(dlg).close());
+    $(dlg).addEventListener('click', (e) => { if (e.target === $(dlg)) $(dlg).close(); });
+  }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
   await load();
   clearInterval(timer);

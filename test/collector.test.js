@@ -112,9 +112,13 @@ test('ticks record a population sample per world from the characters online', as
   const samples = collector.state.pop.filter((p) => p[1] === 1000);
   assert.equal(samples.length, 1);
   assert.equal(samples[0].slice(2).reduce((a, b) => a + b, 0) >= 0, true);
-  const stats = await get(collector, '/api/stats?world=1000&window=24h');
-  assert.equal(stats.population.length, 2); // the recorded sample, then the live count
-  assert.equal(stats.population.at(-1).t >= samples[0][0], true);
+  const pop = await get(collector, '/api/population?world=1000&range=2h');
+  assert.equal(pop.points.length, 2); // the recorded sample, then the live count
+  assert.equal(pop.points.at(-1).t >= samples[0][0], true);
+  assert.equal((await get(collector, '/api/population?world=1000&range=3h')).error, 'invalid world or range');
+  const online = await get(collector, '/api/online?world=1000&empire=0');
+  assert.equal(online.total, online.players.length);
+  assert.equal((await get(collector, '/api/online?world=1000&empire=9')).error, 'invalid world or empire');
 });
 
 test('a malformed frame is ignored rather than fatal', async () => {

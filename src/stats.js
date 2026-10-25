@@ -66,17 +66,38 @@ export function populationSample(state, worlds, now) {
 }
 
 /**
- * The recorded population history for one world, oldest first, thinned to at most `max` points so
- * the payload stays small. The live count is always the last point.
+ * The recorded population history for one world, oldest first. Longer ranges are averaged into at
+ * most `max` buckets so the payload stays small, and the live count is always the last point.
  */
-function populationSeries(state, world, since, now, max = POP_POINTS) {
+export function populationSeries(state, world, since, now, max = POP_POINTS) {
   const rows = (state.pop || []).filter((r) => r[1] === world && r[0] >= since && r[0] <= now);
   const step = Math.max(1, Math.ceil(rows.length / max));
   const out = [];
-  for (let i = rows.length - 1; i >= 0; i -= step) out.push({ t: rows[i][0], vs: rows[i][2], nc: rows[i][3], tr: rows[i][4], ns: rows[i][5] });
-  out.reverse();
+  for (let i = 0; i < rows.length; i += step) {
+    const bucket = rows.slice(i, i + step);
+    const mean = (n) => Math.round(bucket.reduce((a, r) => a + r[n], 0) / bucket.length);
+    out.push({ t: bucket.at(-1)[0], vs: mean(2), nc: mean(3), tr: mean(4), ns: mean(5) });
+  }
   out.push({ t: now, ...onlineByFaction(state, world) });
   return out;
+}
+
+/**
+ * Who the tracker has seen log in on one world, longest session first. `empire` filters by faction
+ * (0 for all). `since` is the login, or the first sighting for a character already playing.
+ */
+export function onlineRoster(state, world, empire = 0, limit = 500) {
+  const worlds = state.onlineW || {};
+  const rows = [];
+  for (const [id, since] of Object.entries(state.online)) {
+    if (worlds[id] !== world) continue;
+    const c = state.chars[id] || {};
+    const faction = c.f || 0;
+    if (empire && faction !== empire) continue;
+    rows.push({ id, name: c.n || `#${id}`, faction, br: c.br || 0, asp: c.p || 0, tag: c.tag || '', outfit: c.on || '', since });
+  }
+  rows.sort((a, b) => a.since - b.since || a.name.localeCompare(b.name));
+  return { total: rows.length, players: rows.slice(0, limit) };
 }
 
 /** Leaderboards for one world over [since, now]. */
@@ -177,7 +198,6 @@ export function computeStats(state, world, since, now, meta = {}) {
     byFaction,
     activePlayers: ranked.length,
     factions,
-    population: populationSeries(state, world, since, now),
     ...meta,
   };
 }

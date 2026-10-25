@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computePlayer, computeStats, onlineByFaction, populationSample } from '../src/stats.js';
+import { computePlayer, computeStats, onlineByFaction, onlineRoster, populationSample, populationSeries } from '../src/stats.js';
 import { CHUNK_BYTES, createState, firstIndexSince, packState, prune, unpackState } from '../src/store.js';
 
 const HOUR = 3600e3;
@@ -59,18 +59,38 @@ test('the population series replays the recorded samples and ends on the live co
   s.online = { 1: NOW - HOUR };
   s.onlineW = { 1: 1000 };
   s.pop = [
-    [NOW - 30 * HOUR, 1000, 9, 9, 9, 9], // older than the window
+    [NOW - 30 * HOUR, 1000, 9, 9, 9, 9], // outside the range asked for
     [NOW - 2 * HOUR, 1000, 40, 50, 60, 10],
     [NOW - HOUR, 2000, 1, 1, 1, 1], // the other world
     [NOW - HOUR, 1000, 42, 52, 62, 12],
   ];
-  const r = computeStats(s, 1000, NOW - 24 * HOUR, NOW);
-  assert.deepEqual(r.population, [
+  assert.deepEqual(populationSeries(s, 1000, NOW - 24 * HOUR, NOW), [
     { t: NOW - 2 * HOUR, vs: 40, nc: 50, tr: 60, ns: 10 },
     { t: NOW - HOUR, vs: 42, nc: 52, tr: 62, ns: 12 },
     { t: NOW, vs: 1, nc: 0, tr: 0, ns: 0 },
   ]);
-  assert.equal(r.hourly, undefined); // the live board charts population now, not kills per hour
+  assert.equal(computeStats(s, 1000, NOW - 24 * HOUR, NOW).population, undefined); // its own endpoint now
+});
+
+test('a long range averages the samples into at most the points asked for', () => {
+  const s = fixture();
+  s.online = {};
+  s.pop = Array.from({ length: 10 }, (_, i) => [NOW - (10 - i) * HOUR, 1000, i, 10 - i, 5, 1]);
+  const r = populationSeries(s, 1000, NOW - 24 * HOUR, NOW, 5);
+  assert.equal(r.length, 6); // five averaged buckets, then the live count
+  assert.deepEqual(r[0], { t: NOW - 9 * HOUR, vs: 1, nc: 10, tr: 5, ns: 1 }); // mean of samples 0 and 1
+  assert.deepEqual(r.at(-1), { t: NOW, vs: 0, nc: 0, tr: 0, ns: 0 });
+});
+
+test('the online roster lists one empire, longest session first', () => {
+  const s = fixture();
+  s.online = { 1: NOW - 2 * HOUR, 2: NOW - HOUR, 3: NOW - HOUR, 9: NOW - HOUR };
+  s.onlineW = { 1: 1000, 2: 1000, 3: 2000, 9: 1000 };
+  const all = onlineRoster(s, 1000);
+  assert.deepEqual(all.players.map((p) => p.name), ['Alpha', '#9', 'Bravo']); // 3 is on the other world; ties break by name
+  assert.equal(all.total, 3);
+  assert.deepEqual(onlineRoster(s, 1000, 2).players.map((p) => p.name), ['Bravo']);
+  assert.equal(onlineRoster(s, 1000, 3).total, 0);
 });
 
 test('shorter windows exclude older kills', () => {

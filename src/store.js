@@ -12,6 +12,10 @@ export const CHUNK_BYTES = 1_500_000;
 // so the character is swept out of the online set rather than inflating the population for ever.
 const SESSION_MAX_MS = 18 * 3600e3;
 
+// Population samples are one small row per world per minute, so a week of them costs far less than
+// an hour of events. The chart's longest range is a week (POP_RANGES in config.js).
+const POP_RETAIN_MS = 7 * 24 * 3600e3;
+
 /** The whole mutable state: a rolling event log plus small lookup caches. */
 export function createState() {
   return {
@@ -34,8 +38,9 @@ export function prune(state, now, retainMs) {
   while (i < state.events.length && state.events[i][0] < cut) i++;
   if (i) state.events.splice(0, i);
 
+  const popCut = now - POP_RETAIN_MS;
   let j = 0;
-  while (j < state.pop.length && state.pop[j][0] < cut) j++;
+  while (j < state.pop.length && state.pop[j][0] < popCut) j++;
   if (j) state.pop.splice(0, j);
 
   for (const [id, ts] of Object.entries(state.online)) {

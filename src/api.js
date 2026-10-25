@@ -1,6 +1,6 @@
-import { SERVERS, WINDOWS } from './config.js';
+import { POP_RANGES, SERVERS, WINDOWS } from './config.js';
 import { ZONES, busiestZone, computeMap, createMapState } from './map.js';
-import { computePlayer, computeStats } from './stats.js';
+import { computePlayer, computeStats, onlineRoster, populationSeries } from './stats.js';
 
 const CHAR_ID = /^\d{1,20}$/;
 const MEMO_MS = 5000; // identical stats requests within this window share one computation
@@ -37,6 +37,7 @@ export function createApi({ state, config, status, feed, map = createMapState(),
     return Object.hasOwn(WINDOWS, key) ? key : null;
   };
   const sinceOf = (key, t) => Math.max(t - WINDOWS[key], t - config.retainMs);
+  const EMPIRES = new Set([0, 1, 2, 3, 4]);
 
   return async function handle(request) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method not allowed' });
@@ -59,6 +60,19 @@ export function createApi({ state, config, status, feed, map = createMapState(),
       });
       memo.set(key, { at: t, body });
       return json(200, body, LIVE_CACHE);
+    }
+    if (url.pathname === '/api/population') {
+      const world = parseWorld(url);
+      const range = url.searchParams.get('range') || '2h';
+      if (world === null || !Object.hasOwn(POP_RANGES, range)) return json(400, { error: 'invalid world or range' });
+      // Samples outlive the event log, so this window is not clamped to retainMs.
+      return json(200, { world, range, now: t, points: populationSeries(state, world, t - POP_RANGES[range], t) }, LIVE_CACHE);
+    }
+    if (url.pathname === '/api/online') {
+      const world = parseWorld(url);
+      const empire = Number(url.searchParams.get('empire') || 0);
+      if (world === null || !EMPIRES.has(empire)) return json(400, { error: 'invalid world or empire' });
+      return json(200, { world, empire, now: t, ...onlineRoster(state, world, empire) }, LIVE_CACHE);
     }
     if (url.pathname === '/api/player') {
       const world = parseWorld(url);
