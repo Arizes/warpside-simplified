@@ -426,7 +426,6 @@ function renderSummary(s) {
   $('server-line').textContent = `${s.server} · last ${view.win.toUpperCase()}`;
   $('t-kills').textContent = num(s.factions.reduce((a, f) => a + f.k, 0));
   $('t-players').textContent = num(s.activePlayers);
-  $('t-since').textContent = clock(s.now - Math.max(s.trackedSince, s.since));
   const live = s.stream === 'connected' && s.feedOnline !== false;
   $('status').className = `pill ${live ? 'live' : 'down'}`;
   $('status').lastElementChild.textContent = live ? 'Live' : s.stream === 'connected' ? 'Daybreak feed offline' : 'Reconnecting';
