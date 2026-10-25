@@ -78,9 +78,10 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   defending in the last 15 minutes.
 - **Map details:** styled after the in-game map, with filters named like the in-game panel (terrain, facilities,
   facility connections, territory control, hotspots, influence cloud, grid, plus region borders, names and players
-  seen). Empire colours are blended over the terrain with `hard-light` so the relief shows through, as in the game.
-  The **influence cloud** is the territory blurred into a small bitmap once per ownership change, so it costs nothing
-  while panning. **Battle bubbles** are short orange puffs on a canvas over the map: a fight's puff rate follows the
+  seen). Territory and lattice use PS2Alerts' map colours and opacities (tints at 40% opacity) over untouched terrain, so
+  roads, buildings and relief stay readable at every zoom; thin black region borders, the lattice and icons carry the
+  contrast. The **influence cloud** is the territory blurred into a small bitmap once per ownership change and glows
+  only outside the playable hexes, so it never tints the terrain. **Battle bubbles** are short orange puffs on a canvas over the map: a fight's puff rate follows the
   server's measured heat at that base, but individual puffs are not individual kills and their spread around the base
   is decorative. **Cut-off** territory (not linked to its empire's warpgate through its own lattice, computed from
   ownership and `facility_link`) is dimmed. Markers are built once per update and only re-scaled while zooming, and a

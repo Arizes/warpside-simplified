@@ -248,34 +248,34 @@ footer p { max-width: 90ch; text-wrap: pretty; }
 #map-svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; overscroll-behavior: contain; }
 #map-svg.drag { cursor: grabbing; }
 .map-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.m-tiles { filter: brightness(1.05) saturate(0.6); }
+.m-tiles { filter: none; }
 .m-fogpath { fill: rgba(3, 14, 16, 0.72); pointer-events: none; }
-/* territory: colours sampled from the in-game map, with the terrain showing through */
-/* hard-light keeps the terrain relief visible under vivid empire colours, like the in-game map */
-.m-regions { mix-blend-mode: hard-light; }
-.m-region { fill: #0d1118; fill-opacity: 0.6; transition: fill 0.8s, fill-opacity 0.25s; cursor: pointer; }
-.m-region.o1 { fill: #9124dc; fill-opacity: 0.95; }
-.m-region.o2 { fill: #1a96e2; fill-opacity: 0.95; }
-.m-region.o3 { fill: #ec1530; fill-opacity: 0.95; }
-.m-region.o4 { fill: #e8e8e8; fill-opacity: 0.5; }
-.m-region.cut { fill-opacity: 0.5; }
-.m-region:hover { fill-opacity: 1; }
+/* territory and lattice use PS2Alerts' map colours and opacities exactly, so the terrain stays readable */
+.m-region { fill: #718096; fill-opacity: 0.4; transition: fill 0.8s, fill-opacity 0.25s; cursor: pointer; }
+.m-region.o1 { fill: #6e18a3; fill-opacity: 0.4; }
+.m-region.o2 { fill: #0064aa; fill-opacity: 0.4; }
+.m-region.o3 { fill: #bc1212; fill-opacity: 0.4; }
+.m-region.o4 { fill: #718096; fill-opacity: 0.4; }
+.m-region:hover { fill-opacity: 0.55; }
+.m-region.o1.cut { fill: #2e153d; fill-opacity: 0.8; }
+.m-region.o2.cut { fill: #0f273f; fill-opacity: 0.8; }
+.m-region.o3.cut { fill: #3a0005; fill-opacity: 0.8; }
 .m-region.flash { animation: m-flash 2.6s ease-out; }
-@keyframes m-flash { 0%, 25% { fill: #fff; fill-opacity: 0.95; } }
-.m-cloud { opacity: 0.5; pointer-events: none; }
-.m-gridline { fill: none; stroke: rgba(2, 4, 10, 0.18); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
-.m-border { fill: none; stroke: rgba(2, 4, 10, 0.78); stroke-width: 1.8; vector-effect: non-scaling-stroke; pointer-events: none; stroke-linecap: round; }
-.m-select-fill { fill: #fff; fill-opacity: 0.2; pointer-events: none; }
+@keyframes m-flash { 0%, 25% { fill: #fff; fill-opacity: 0.7; } }
+.m-cloud { opacity: 0.55; pointer-events: none; }
+.m-gridline { fill: none; stroke: rgba(0, 0, 0, 0.11); stroke-width: 0.8; vector-effect: non-scaling-stroke; pointer-events: none; }
+.m-border { fill: none; stroke: #000; stroke-width: 1.3; vector-effect: non-scaling-stroke; pointer-events: none; stroke-linecap: round; }
+.m-select-fill { fill: #fff; fill-opacity: 0.12; pointer-events: none; }
 .m-select { fill: none; stroke: #fff; stroke-width: 2.4; vector-effect: non-scaling-stroke; pointer-events: none; stroke-linecap: round; }
 .m-select-glow { fill: none; stroke: rgba(220, 240, 255, 0.5); stroke-width: 7; vector-effect: non-scaling-stroke; pointer-events: none; stroke-linecap: round; }
 /* lattice: bright tinted lines with a soft glow; links between empires are dashed amber */
-.m-link { stroke-width: 1.7; vector-effect: non-scaling-stroke; pointer-events: none; stroke-linecap: round; }
-.m-link.glow { stroke-width: 5; stroke-opacity: 0.35; }
-.m-link.l0 { stroke: rgba(205, 212, 222, 0.45); stroke-width: 1.2; }
-.m-link.l1 { stroke: #f4c8ff; } .m-link.glow.l1 { stroke: #c64dff; }
-.m-link.l2 { stroke: #c4f1ff; } .m-link.glow.l2 { stroke: #2fb6ff; }
-.m-link.l3 { stroke: #ffd6dc; } .m-link.glow.l3 { stroke: #ff3b55; }
-.m-link.front { stroke: #f5c043; stroke-width: 1.5; stroke-dasharray: 3 4; }
+.m-link { stroke-opacity: 0.8; stroke-width: 1.7; vector-effect: non-scaling-stroke; pointer-events: none; stroke-linecap: round; }
+.m-link.glow { display: none; }
+.m-link.l0 { stroke: #928e99; stroke-opacity: 0.6; stroke-width: 1.2; }
+.m-link.l1 { stroke: #ffb2ff; } .m-link.glow.l1 { stroke: #c64dff; }
+.m-link.l2 { stroke: #b0ffff; } .m-link.glow.l2 { stroke: #2fb6ff; }
+.m-link.l3 { stroke: #ffbfb2; } .m-link.glow.l3 { stroke: #ff3b55; }
+.m-link.front { stroke: #eae690; stroke-width: 1.5; stroke-dasharray: 5 5; }
 .m-bases, .m-labels { pointer-events: none; }
 /* base icons: white rings over a dark empire tint, sized in screen pixels */
 .m-base .badge { fill: rgba(10, 14, 22, 0.78); stroke: #f4f8ff; stroke-width: 1.6; }

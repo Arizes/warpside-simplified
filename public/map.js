@@ -110,7 +110,9 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   const fx = fxCanvas.getContext('2d');
   const layer = {};
   for (const id of ['tiles', 'fog', 'regions', 'cloud', 'grid', 'borders', 'selected', 'lattice', 'bases', 'labels']) layer[id] = svgEl('g', { class: `m-${id}` }, svg);
-  const cloudImg = svgEl('image', { x: -HALF, y: -HALF, width: 2 * HALF, height: 2 * HALF, preserveAspectRatio: 'none' }, layer.cloud);
+  // The cloud glows only beyond the playable hexes, so it never tints the terrain inside the territory.
+  const cloudClip = svgEl('path', { 'clip-rule': 'evenodd' }, svgEl('clipPath', { id: 'm-outside' }, svgEl('defs', {}, svg)));
+  const cloudImg = svgEl('image', { x: -HALF, y: -HALF, width: 2 * HALF, height: 2 * HALF, preserveAspectRatio: 'none', 'clip-path': 'url(#m-outside)' }, layer.cloud);
 
   const sounds = createSounds();
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -219,7 +221,9 @@ export function createMap({ $, el, api, emblem, getWorld, onError }) {
   function buildStatic() {
     for (const g of ['fog', 'regions', 'grid', 'borders', 'selected']) layer[g].replaceChildren();
     // Outside the playable hexes the in-game map sinks into a dark teal haze: a big rectangle minus every hex.
-    svgEl('path', { d: `M${-2 * HALF} ${-2 * HALF}H${2 * HALF}V${2 * HALF}H${-2 * HALF}Z${geo.grid}`, 'fill-rule': 'evenodd', class: 'm-fogpath' }, layer.fog);
+    const outside = `M${-2 * HALF} ${-2 * HALF}H${2 * HALF}V${2 * HALF}H${-2 * HALF}Z${geo.grid}`;
+    svgEl('path', { d: outside, 'fill-rule': 'evenodd', class: 'm-fogpath' }, layer.fog);
+    cloudClip.setAttribute('d', outside);
     for (const [rid, r] of Object.entries(geo.regions)) {
       const p = svgEl('path', { d: r.d, 'data-rid': rid, class: 'm-region o0' }, layer.regions);
       p.addEventListener('pointermove', (e) => showTip(e, rid));
