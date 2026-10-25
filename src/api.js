@@ -5,6 +5,11 @@ import { computePlayer, computeStats } from './stats.js';
 const CHAR_ID = /^\d{1,20}$/;
 const MEMO_MS = 5000; // identical stats requests within this window share one computation
 
+// Live boards are the same for everyone, so the edge may hold them briefly: many viewers polling
+// at once then collapse into one origin request per window. `max-age=0` keeps each browser
+// revalidating, so a viewer still sees data no more than a few seconds old.
+const LIVE_CACHE = 'public, max-age=0, s-maxage=15';
+
 const HEADERS = {
   'content-type': 'application/json',
   'x-content-type-options': 'nosniff',
@@ -44,7 +49,7 @@ export function createApi({ state, config, status, feed, map = createMapState(),
       if (world === null || win === null) return json(400, { error: 'invalid world or window' });
       const key = `${world}:${win}`;
       const hit = memo.get(key);
-      if (hit && t - hit.at < MEMO_MS) return json(200, hit.body);
+      if (hit && t - hit.at < MEMO_MS) return json(200, hit.body, LIVE_CACHE);
       const server = SERVERS[world];
       const body = computeStats(state, world, sinceOf(win, t), t, {
         server: `${server.name} (${server.region})`,
@@ -53,7 +58,7 @@ export function createApi({ state, config, status, feed, map = createMapState(),
         trackedSince: Math.max(state.events[0]?.[0] ?? t, t - config.retainMs),
       });
       memo.set(key, { at: t, body });
-      return json(200, body);
+      return json(200, body, LIVE_CACHE);
     }
     if (url.pathname === '/api/player') {
       const world = parseWorld(url);
@@ -61,14 +66,16 @@ export function createApi({ state, config, status, feed, map = createMapState(),
       const id = url.searchParams.get('id') || '';
       if (world === null || win === null || !CHAR_ID.test(id)) return json(400, { error: 'invalid world, window or id' });
       const player = computePlayer(state, world, id, sinceOf(win, t), t);
-      return player ? json(200, player) : json(404, { error: 'no activity for this character in the window' });
+      return player ? json(200, player, LIVE_CACHE) : json(404, { error: 'no activity for this character in the window' });
     }
     if (url.pathname === '/api/map' || url.pathname === '/api/map-static') {
       const world = parseWorld(url);
       const z = url.searchParams.get('zone');
       const zone = z === null ? busiestZone(map, state.events, world, t) : Number(z);
       if (world === null || !ZONES[zone]) return json(400, { error: 'invalid world or zone' });
-      if (url.pathname === '/api/map') return json(200, computeMap(map, statics.loaded(world), state.events, world, zone, t, (id) => state.outfits?.[id] || (requestOutfit(world, id), null)));
+      if (url.pathname === '/api/map') {
+        return json(200, computeMap(map, statics.loaded(world), state.events, world, zone, t, (id) => state.outfits?.[id] || (requestOutfit(world, id), null)), LIVE_CACHE);
+      }
       try {
         const geo = await statics.get(world, zone);
         // geometry never changes between game updates, so browsers and the edge may keep it for a day

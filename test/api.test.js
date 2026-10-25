@@ -21,7 +21,7 @@ test('stats are served for a valid world and window', async () => {
   const { api } = setup();
   const r = await get(api, '/api/stats?world=1000&window=24h');
   assert.equal(r.status, 200);
-  assert.equal(r.headers.get('cache-control'), 'no-store');
+  assert.equal(r.headers.get('cache-control'), 'public, max-age=0, s-maxage=15');
   const body = await r.json();
   assert.equal(body.stream, 'connected');
   assert.equal(body.players[0].k, 1);
@@ -121,4 +121,19 @@ test('map endpoints validate the zone, cache geometry for a day and ask for unkn
   const s = await get(api, '/api/map-static?world=1000&zone=2');
   assert.equal(s.headers.get('cache-control'), 'public, max-age=86400');
   assert.equal((await get(api, '/api/map-static?world=1000&zone=4')).status, 503);
+});
+
+test('live endpoints are edge-cacheable for seconds; health never is', async () => {
+  const { api } = setup();
+  const LIVE = 'public, max-age=0, s-maxage=15';
+  for (const path of ['/api/stats?world=1000&window=24h', '/api/player?world=1000&id=1']) {
+    assert.equal((await get(api, path)).headers.get('cache-control'), LIVE, path);
+  }
+  // served from the memo rather than recomputed, and still carries the same policy
+  assert.equal((await get(api, '/api/stats?world=1000&window=24h')).headers.get('cache-control'), LIVE);
+
+  // the platform health check must always reach the origin, and errors must not be cached
+  assert.equal((await get(api, '/health')).headers.get('cache-control'), 'no-store');
+  assert.equal((await get(api, '/api/stats?world=1')).headers.get('cache-control'), 'no-store');
+  assert.equal((await get(api, '/api/player?world=1000&id=999')).headers.get('cache-control'), 'no-store');
 });

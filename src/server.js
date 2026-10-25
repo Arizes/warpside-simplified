@@ -152,10 +152,9 @@ async function main() {
         .api(new Request(`http://local${req.url}`, { method: req.method }))
         .then(async (response) => {
           const headers = Object.fromEntries(response.headers);
-          if (PUBLIC_ORIGIN) {
-            headers['access-control-allow-origin'] = PUBLIC_ORIGIN;
-            headers.vary = 'origin';
-          }
+          // One fixed origin rather than an echo of the request's, so the response is the same for
+          // every caller: no Vary, and the edge can serve one cached copy to everyone.
+          if (PUBLIC_ORIGIN) headers['access-control-allow-origin'] = PUBLIC_ORIGIN;
           const body = Buffer.from(await response.arrayBuffer());
           res.writeHead(response.status, { ...headers, 'content-length': body.length });
           res.end(req.method === 'HEAD' ? undefined : body);
