@@ -119,6 +119,9 @@ h3 { margin: 14px 0 6px; font-size: 15px; font-weight: 600; color: var(--muted);
 .spawns .note { margin-top: 10px; max-width: none; }
 .spawn-location { display: flex; flex-direction: column; gap: 2px; }
 .spawn-location small { color: var(--muted); }
+.spawn-map-link { color: var(--text); text-underline-offset: 3px; }
+.spawn-map-link:hover { color: var(--accent); }
+.spawn-map-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .fbar { display: flex; height: 32px; background: #03060b; border: 1px solid var(--line); overflow: hidden; }
 .fbar div { display: grid; place-items: center; font: 600 14px Rajdhani, sans-serif; color: #fff; min-width: 0; overflow: hidden; white-space: nowrap; transition: flex-grow 0.6s; }

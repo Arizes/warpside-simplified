@@ -213,9 +213,15 @@ function renderSpawns() {
       : el('span', { class: 'sub', 'aria-label': 'Faction unknown', text: '?' });
     return el('span', { class: 'who' }, icon, el('span', { class: `c${p.faction}`, text: label }));
   };
-  const locationCell = (p) => el('span', { class: 'spawn-location' },
-    el('span', { text: ZONES[p.zone] || 'Unknown continent' }),
-    el('small', { text: 'Base unavailable' }));
+  const locationCell = (p) => {
+    const continent = ZONES[p.zone];
+    const link = continent ? el('a', { href: '#map', class: 'spawn-map-link', text: `View ${continent} map`,
+      'aria-label': `View ${continent} continent map; exact spawn base is unknown` }) : null;
+    link?.addEventListener('click', (event) => { event.preventDefault(); openSpawn(p); });
+    return el('span', { class: 'spawn-location' },
+      link || el('span', { text: 'Unknown continent' }),
+      el('small', { text: 'Exact base not provided by feed' }));
+  };
   $('spawns-table').replaceChildren(buildTable({
     cols: [
       { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
@@ -228,7 +234,7 @@ function renderSpawns() {
       { label: 'First seen', n: true, cell: (p) => el('time', { datetime: new Date(p.firstSeen).toISOString(), title: stamp(p.firstSeen), text: hhmm(p.firstSeen) }) },
       { label: 'Deployed', n: true, cell: missing },
       { label: 'Lifespan', n: true, cell: missing },
-    ], rows: board?.rows || [], onRow: openSpawn,
+    ], rows: board?.rows || [],
     empty: 'No Sunderer or Router spawn bonuses observed in the last 5 minutes. Base spawns are not exposed by this feed.',
   }));
 }
