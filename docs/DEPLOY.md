@@ -51,8 +51,20 @@ Still to do: set `CENSUS_SERVICE_ID` (below), then the frontend and edge steps, 
 2. DNS: the `api` CNAME is created **unproxied**, because Railway cannot complete its TLS challenge through
    the proxy. Once Railway shows the domain as issued, switch it to proxied; the zone's SSL mode must stay
    **Full** or **Full (strict)**, never Flexible, or the API answers in a redirect loop.
-3. Cache Rule for `api.warpside2.com/api/*` (respect origin `s-maxage`); bypass for `/health`.
-4. Rate-limiting rule on `/api/*`, and a Transform Rule that adds the origin secret header.
+3. **Done.** A Cache Rule on `api.warpside2.com/api/*` makes the API eligible for cache and respects the
+   origin's TTL, so `src/api.js` alone decides how long anything is held: live boards 15 s, geometry a day,
+   errors and `/health` not at all. `/health` is outside `/api/`, so the rule never touches it and the
+   platform health check always reaches the origin. Verified: a repeat request returns `cf-cache-status: HIT`.
+4. **Rate limiting done.** One rule: more than 50 requests per 10 s from one address to `/api/*` is blocked
+   for 10 s (a viewer sends 1 to 2). The free plan allows **one** rate-limiting rule, a 10 s window and a
+   10 s timeout, and nothing else; this one replaced a "Leaked credential check" rule that could never fire
+   here, since the site has no login, no password field and `form-action 'none'`. To restore it:
+   expression `(cf.waf.credential_check.password_leaked)`, action `block`, 5 requests per 10 s,
+   mitigation timeout 10, characteristics `ip.src` and `cf.colo.id`.
+5. **Origin lock (open).** `ORIGIN_SECRET` in Railway plus a Transform Rule adding the same value as the
+   `x-origin-secret` header. `src/server.js` already enforces it on `/api/*` and exempts `/health` so the
+   platform health check keeps working. Until it is set, the Railway origin can be reached directly,
+   bypassing the cache and the rate limit above.
 5. Check: the page loads, `https://api.warpside2.com/health` shows both streams connected and events rising,
    and repeated `/api/stats` calls show `cf-cache-status: HIT`.
 
