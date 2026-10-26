@@ -22,8 +22,9 @@ const POP_RETAIN_MS = 7 * 24 * 3600e3;
 export function createState() {
   return {
     events: [], // ascending by ts
-    online: {}, // characterId -> login ts
+    online: {}, // characterId -> session start: the login we saw, or the first sighting (see onlineSeen)
     onlineW: {}, // characterId -> world (only for characters in `online`)
+    onlineSeen: {}, // characterId -> 1 when that start is only a first sighting, so playtime is a floor
     pop: [], // population samples, ascending by ts: [ts, world, vs, nc, tr, ns]
     chars: {}, // characterId -> { n, f, br, p, oid, tag, on }
     items: {}, // itemId -> { n, img }
@@ -36,6 +37,12 @@ export function createState() {
 export function prune(state, now, retainMs) {
   pruneSpawns(state, now);
   state.onlineW ||= {}; // snapshots written before these existed restore without them
+  if (!state.onlineSeen) {
+    // An older snapshot cannot say which of its sessions came from a login we watched, so take the
+    // weaker claim for all of them: their playtime is a floor until the next login proves otherwise.
+    state.onlineSeen = {};
+    for (const id of Object.keys(state.online)) state.onlineSeen[id] = 1;
+  }
   state.pop ||= [];
   const cut = now - retainMs;
   let i = 0;
@@ -51,9 +58,11 @@ export function prune(state, now, retainMs) {
     if (now - ts > SESSION_MAX_MS) {
       delete state.online[id];
       delete state.onlineW[id];
+      delete state.onlineSeen[id];
     }
   }
   for (const id of Object.keys(state.onlineW)) if (!Object.hasOwn(state.online, id)) delete state.onlineW[id];
+  for (const id of Object.keys(state.onlineSeen)) if (!Object.hasOwn(state.online, id)) delete state.onlineSeen[id];
 
   const used = new Set(Object.keys(state.online));
   for (const p of Object.values(state.spawns)) used.add(p.owner);

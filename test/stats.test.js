@@ -67,7 +67,7 @@ test('the population series replays the recorded samples and ends on the live co
   assert.deepEqual(populationSeries(s, 1000, NOW - 24 * HOUR, NOW), [
     { t: NOW - 2 * HOUR, vs: 40, nc: 50, tr: 60, ns: 10 },
     { t: NOW - HOUR, vs: 42, nc: 52, tr: 62, ns: 12 },
-    { t: NOW, vs: 1, nc: 0, tr: 0, ns: 0 },
+    { t: NOW, vs: 1, nc: 0, tr: 0, ns: 0, total: 1 },
   ]);
   assert.equal(computeStats(s, 1000, NOW - 24 * HOUR, NOW).population, undefined); // its own endpoint now
 });
@@ -79,7 +79,7 @@ test('a long range averages the samples into at most the points asked for', () =
   const r = populationSeries(s, 1000, NOW - 24 * HOUR, NOW, 5);
   assert.equal(r.length, 6); // five averaged buckets, then the live count
   assert.deepEqual(r[0], { t: NOW - 9 * HOUR, vs: 1, nc: 10, tr: 5, ns: 1 }); // mean of samples 0 and 1
-  assert.deepEqual(r.at(-1), { t: NOW, vs: 0, nc: 0, tr: 0, ns: 0 });
+  assert.deepEqual(r.at(-1), { t: NOW, vs: 0, nc: 0, tr: 0, ns: 0, total: 0 });
 });
 
 test('the online roster lists one empire, longest session first', () => {
@@ -153,6 +153,94 @@ test('per-empire boards rank each faction separately', () => {
   assert.deepEqual(r.byFaction[2].players.map((p) => p.id), ['2']);
   assert.deepEqual(r.byFaction[3].players.map((p) => p.id), ['3']);
   assert.equal(r.byFaction[1].outfits.length, 1); // the shared outfit belongs to its first-ranked member
-  assert.equal(r.activePlayers, 3);
+  assert.equal(r.windowPlayers, 3);
+  assert.equal(r.activePlayers, 0);
 });
 
+test('NSO totals and boards include operatives regardless of their assigned empire', () => {
+  const s = fixture();
+  s.chars[4] = { n: 'Operative', f: 4, oid: 'nso', tag: 'NSO', on: 'Operatives' };
+  s.chars[5] = { n: 'Second operative', f: 4, oid: 'nso', tag: 'NSO', on: 'Operatives' };
+  s.events.push(
+    [NOW - 3000, 1000, '4', '2', '80', 0, 1, 2],
+    [NOW - 2000, 1000, '5', '3', '80', 0, 2, 3],
+    [NOW - 1000, 1000, '1', '4', '80', 0, 1, 3],
+  );
+  const r = computeStats(s, 1000, NOW - 24 * HOUR, NOW);
+  assert.deepEqual(r.factions.find((f) => f.f === 4), { f: 4, k: 2, d: 1 });
+  assert.deepEqual(r.byFaction[4].players.map((p) => p.id), ['4', '5']);
+  assert.deepEqual(r.byFaction[4].outfits.map((o) => [o.tag, o.k, o.d]), [['NSO', 2, 1]]);
+  assert.equal(r.byFaction[1].players.some((p) => p.id === '4'), false);
+  assert.equal(r.factions.reduce((sum, f) => sum + f.k, 0), r.players.reduce((sum, p) => sum + p.k, 0));
+  const empty = computeStats(createState(), 1000, NOW - HOUR, NOW);
+  assert.deepEqual(empty.factions.find((f) => f.f === 4), { f: 4, k: 0, d: 0 });
+  assert.deepEqual(empty.byFaction[4], { players: [], outfits: [] });
+});
+
+test('online headline counts current sessions including noncombatants, independently of window', async () => {
+  const { applyRecord } = await import('../src/ingest.js');
+  const s = fixture();
+  const lookups = { request() {}, requestCharacter() {} };
+  // A past killer has logged off. A victim, a noncombatant with a pending lookup and a
+  // player on the other server are connected. Only the first two belong in this total.
+  applyRecord(s, lookups, {}, { kind: 'login', world: 1000, ts: NOW - HOUR, id: '1' });
+  applyRecord(s, lookups, {}, { kind: 'logout', world: 1000, ts: NOW - 1000, id: '1' });
+  applyRecord(s, lookups, {}, { kind: 'login', world: 1000, ts: NOW - HOUR, id: '2' });
+  applyRecord(s, lookups, {}, { kind: 'login', world: 1000, ts: NOW - HOUR, id: '9' });
+  applyRecord(s, lookups, {}, { kind: 'login', world: 2000, ts: NOW - HOUR, id: '3' });
+  for (const hours of [1, 6, 24]) {
+    const r = computeStats(s, 1000, NOW - hours * HOUR, NOW);
+    assert.equal(r.activePlayers, 2);
+    assert.equal(r.onlinePlayers, 2);
+    assert.equal(r.onlinePlayers, onlineRoster(s, 1000).total);
+    assert.equal(r.onlinePlayers, populationSeries(s, 1000, NOW - hours * HOUR, NOW).at(-1).total);
+  }
+  assert.equal(computeStats(s, 2000, NOW - HOUR, NOW).onlinePlayers, 1);
+});
+
+
+test('playtime reports only the session the tracker watched', () => {
+  const s = fixture();
+  s.online = { 1: NOW - 90 * 60e3, 2: NOW - 40 * 60e3 }; // Alpha 1h30 in, Bravo 40m in
+  s.onlineSeen = { 2: 1 }; // Bravo was only spotted mid-session; Alpha's login was witnessed
+  const since = NOW - 24 * HOUR;
+  const by = Object.fromEntries(computeStats(s, 1000, since, NOW).players.map((p) => [p.id, p]));
+
+  assert.equal(by['1'].pt, 90 * 60e3); // a login we saw: exact
+  assert.equal(by['1'].ptFloor, false);
+
+  assert.equal(by['2'].pt, 40 * 60e3); // first sighting: they had already been playing
+  assert.equal(by['2'].ptFloor, true);
+
+  assert.equal(by['3'].pt, null); // not online, so the tracker cannot know
+  assert.equal(by['3'].ptFloor, false);
+});
+
+test('playtime never exceeds the window, and is exact once clamped to it', () => {
+  const s = fixture();
+  s.online = { 1: NOW - 5 * HOUR }; // online since before the window opened
+  s.onlineSeen = { 1: 1 }; // and only ever a sighting
+  const since = NOW - 2 * HOUR;
+  const alpha = computeStats(s, 1000, since, NOW).players.find((p) => p.id === '1');
+
+  assert.equal(alpha.pt, 2 * HOUR); // the window, not the five hours behind it
+  // they were plainly online for the whole window, so within it the figure is not a floor
+  assert.equal(alpha.ptFloor, false);
+});
+
+test('a witnessed login makes a previously sighted session exact', async () => {
+  const { applyRecord } = await import('../src/ingest.js');
+  const s = createState();
+  const lookups = { request() {}, requestCharacter() {}, requestOutfit() {} };
+
+  applyRecord(s, lookups, {}, { kind: 'death', world: 1000, ts: NOW, event: [NOW, 1000, '7', '8', '80', 0, 1, 2] });
+  assert.equal(s.onlineSeen['7'], 1); // seen fighting: start is a floor
+
+  applyRecord(s, lookups, {}, { kind: 'login', world: 1000, ts: NOW + 60e3, id: '7' });
+  assert.equal(s.online['7'], NOW + 60e3);
+  assert.equal(s.onlineSeen['7'], undefined); // now we watched it start
+
+  applyRecord(s, lookups, {}, { kind: 'logout', world: 1000, ts: NOW + 120e3, id: '7' });
+  assert.equal(s.online['7'], undefined);
+  assert.equal(s.onlineSeen['7'], undefined);
+});

@@ -50,7 +50,7 @@
       </div>
       <dl class="tiles">
         <div class="tile"><dd id="t-kills">–</dd><dt>Kills</dt></div>
-        <div class="tile"><dd id="t-players">–</dd><dt>Active players</dt></div>
+        <div class="tile"><dd id="t-players">–</dd><dt>Players online</dt></div>
       </dl>
     </section>
 
@@ -71,7 +71,7 @@
             <div class="chart pop" id="chart"></div>
             <div class="poptip" id="pop-tip" hidden></div>
           </div>
-          <p class="note small">Counted from the logins and logouts Daybreak publishes, sampled once a minute, plus anyone seen fighting. Characters already online when the tracker started are missing until their next login, so the count can read low, never high. Pick an empire above to see who is online.</p>
+          <p class="note small">Current online sessions tracked from Daybreak logins, logouts and combat events; independent of the leaderboard window. The chart records one sample a minute. Players already connected may be missing until observed, and missed logouts can leave stale sessions. Totals include players whose empire lookup is pending. Pick an empire above to see who is online.</p>
         </div>
         <div>
           <h2>Empire share</h2>
@@ -173,7 +173,7 @@
       <p class="eyebrow" id="o-sub"></p>
       <h2 id="o-title"></h2>
       <div class="scroll tall" id="o-list"></div>
-      <p class="note small">Only characters the tracker has seen log in, or seen in a kill, are listed. Anyone already playing when it started is missing until their next login, and "seen online" is measured from that moment, not from when they really logged in.</p>
+      <p class="note small">Characters observed through Daybreak logins or combat are listed until their logout is received. Players already connected may be missing until observed; missed logouts can leave stale sessions. "Seen online" starts when the tracker first observed the session.</p>
     </div>
   </dialog>
 

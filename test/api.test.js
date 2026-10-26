@@ -28,6 +28,22 @@ test('stats are served for a valid world and window', async () => {
   assert.equal(body.players[0].weaponImg, '/files/ps2/images/static/1.png');
 });
 
+test('all live endpoints agree on online sessions regardless of leaderboard window', async () => {
+  const { state, api } = setup();
+  state.online = { 2: NOW - 1000, 9: NOW - 1000, 10: NOW - 1000 };
+  state.onlineW = { 2: 1000, 9: 1000, 10: 2000 };
+  const roster = await (await get(api, '/api/online?world=1000')).json();
+  const pop = await (await get(api, '/api/population?world=1000')).json();
+  assert.equal(roster.total, 2); // includes a character with no faction lookup, excludes the other world
+  assert.equal(pop.points.at(-1).total, roster.total);
+  for (const window of ['1h', '6h', '24h']) {
+    const stats = await (await get(api, `/api/stats?world=1000&window=${window}`)).json();
+    assert.equal(stats.onlinePlayers, roster.total);
+    assert.equal(stats.activePlayers, roster.total);
+    assert.equal(stats.windowPlayers, 1); // the killer has logged off, but remains on the board
+  }
+});
+
 test('unknown world or window is a 400, never a crash', async () => {
   const { api } = setup();
   for (const q of ['world=1', 'world=abc', 'window=999d', 'world=1000&window=__proto__']) {

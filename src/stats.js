@@ -41,7 +41,7 @@ function hourly(events, from, now, hours, match) {
 /**
  * Characters online per empire on one world, right now. Built from the PlayerLogin and PlayerLogout
  * events Daybreak publishes, plus anyone seen fighting; characters already online when the tracker
- * started are missing until their next login, so this can read low, never high.
+ * started are missing until a login or activity is observed. Missed logouts can overcount.
  */
 export function onlineByFaction(state, world) {
   const sample = { vs: 0, nc: 0, tr: 0, ns: 0 };
@@ -55,6 +55,11 @@ export function onlineByFaction(state, world) {
     else if (f === NSO) sample.ns++;
   }
   return sample;
+}
+
+/** Count sessions on this world, including characters whose faction lookup is still pending. */
+export function onlineCount(state, world) {
+  return Object.keys(state.online).filter((id) => state.onlineW?.[id] === world).length;
 }
 
 /** One recorded sample per world, for the collector to append to `state.pop`. */
@@ -78,7 +83,7 @@ export function populationSeries(state, world, since, now, max = POP_POINTS) {
     const mean = (n) => Math.round(bucket.reduce((a, r) => a + r[n], 0) / bucket.length);
     out.push({ t: bucket.at(-1)[0], vs: mean(2), nc: mean(3), tr: mean(4), ns: mean(5) });
   }
-  out.push({ t: now, ...onlineByFaction(state, world) });
+  out.push({ t: now, ...onlineByFaction(state, world), total: onlineCount(state, world) });
   return out;
 }
 
@@ -138,6 +143,11 @@ export function computeStats(state, world, since, now, meta = {}) {
     const c = state.chars[p.id] || {};
     const login = state.online[p.id];
     const activeMin = Math.max(1, (Math.max(p.last, login ? now : p.last) - Math.max(since, login || p.first)) / 60e3);
+    // Playtime is only what the tracker watched: this session's start, clamped to the window, and
+    // unknown for anyone not online now. Where the start is a first sighting rather than a login we
+    // saw, the session really began earlier, so the figure is a floor and never the whole truth.
+    const start = login === undefined ? null : Math.max(login, since);
+    const ptFloor = start !== null && login > since && Boolean(state.onlineSeen?.[p.id]);
     const wp = topWeapon(p.w, state.items);
     return {
       id: p.id,
@@ -153,6 +163,8 @@ export function computeStats(state, world, since, now, meta = {}) {
       tk: p.tk,
       s: p.s,
       kpm: Number((p.k / activeMin).toFixed(2)),
+      pt: start === null ? null : now - start, // ms seen online in the window, null when unknown
+      ptFloor, // true when the real session started before the tracker noticed them
       online: Boolean(login),
       weapon: wp?.name || '-',
       weaponImg: wp?.img || '',
@@ -177,10 +189,10 @@ export function computeStats(state, world, since, now, meta = {}) {
 
   const ranked = rows.filter((p) => p.k > 0).sort((a, b) => b.k - a.k);
   const byFaction = Object.fromEntries(
-    [1, 2, 3].map((f) => [f, { players: ranked.filter((p) => p.faction === f).slice(0, 50), outfits: allOutfits.filter((o) => o.faction === f).slice(0, 25) }]),
+    [1, 2, 3, NSO].map((f) => [f, { players: ranked.filter((p) => p.faction === f).slice(0, 50), outfits: allOutfits.filter((o) => o.faction === f).slice(0, 25) }]),
   );
 
-  const factions = [1, 2, 3].map((f) => {
+  const factions = [1, 2, 3, NSO].map((f) => {
     let k = 0;
     let d = 0;
     for (const p of rows) if (p.faction === f) { k += p.k; d += p.d; }
@@ -196,7 +208,9 @@ export function computeStats(state, world, since, now, meta = {}) {
     players: ranked.slice(0, 100),
     outfits: allOutfits.slice(0, 50),
     byFaction,
-    activePlayers: ranked.length,
+    activePlayers: onlineCount(state, world),
+    onlinePlayers: onlineCount(state, world),
+    windowPlayers: ranked.length, // distinct players with a kill in the selected leaderboard window
     factions,
     ...meta,
   };

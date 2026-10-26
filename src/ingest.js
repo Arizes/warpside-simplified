@@ -1,5 +1,5 @@
-import { noteSpawn } from './spawns.js';
 import { noteControl, noteDeath, noteFacility } from './map.js';
+import { noteSpawn } from './spawns.js';
 
 /**
  * A character in a kill event is online whether or not we saw its login (the stream only starts
@@ -9,6 +9,7 @@ function markOnline(state, world, id, ts) {
   if (!id || id === '0' || Object.hasOwn(state.online, id)) return;
   state.online[id] = ts;
   (state.onlineW ||= {})[id] = world;
+  (state.onlineSeen ||= {})[id] = 1; // they were already playing, so playtime from here is a floor
 }
 
 /**
@@ -29,11 +30,13 @@ export function applyRecord(state, lookups, feed, r, map = null, regionOf = () =
     case 'login':
       state.online[r.id] = r.ts;
       (state.onlineW ||= {})[r.id] = r.world;
+      delete state.onlineSeen?.[r.id]; // we watched this session start, so its length is exact
       lookups.requestCharacter(r.world, r.id);
       return true;
     case 'logout':
       delete state.online[r.id];
       delete state.onlineW?.[r.id];
+      delete state.onlineSeen?.[r.id];
       return true;
     case 'death': {
       const [, world, attacker, victim, weapon] = r.event;

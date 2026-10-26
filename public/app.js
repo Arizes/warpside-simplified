@@ -9,7 +9,7 @@ const SVG = 'http://www.w3.org/2000/svg';
 const CENSUS = 'https://census.daybreakgames.com'; // images load straight from Census
 const EMBLEM = { 1: '94', 2: '12', 3: '18', 4: '93615' };
 const TAG = { 1: 'VS', 2: 'NC', 3: 'TR', 4: 'NSO' };
-const EMPIRE = { 1: 'Vanu Sovereignty', 2: 'New Conglomerate', 3: 'Terran Republic' };
+const EMPIRE = { 1: 'Vanu Sovereignty', 2: 'New Conglomerate', 3: 'Terran Republic', 4: 'Nanite Systems Operatives' };
 const TABS = ['live', 'players', 'map'];
 const TITLES = { live: 'Live leaderboard', players: 'Top players', map: 'Live map' };
 const POLL_MS = 30000; // every poll is a Worker request, and the free plan allows 100k a day
@@ -53,6 +53,9 @@ const clock = (ms) => {
   const m = Math.max(0, Math.floor(ms / 60000));
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 };
+// Playtime is what the tracker watched, not the whole session: a dash when it never saw the player
+// start, a trailing + when it only noticed them part-way in and the real session began earlier.
+const playtime = (p) => (p.pt == null ? '–' : clock(p.pt) + (p.ptFloor ? '+' : ''));
 const emblem = (f, size = 22) => el('img', { src: `${CENSUS}/files/ps2/images/static/${EMBLEM[f] || EMBLEM[4]}.png`, alt: TAG[f] || '', width: size, height: size, loading: 'lazy' });
 const weaponCell = (name, img) => el('span', { class: 'wep' }, img ? el('img', { src: CENSUS + img, alt: '', loading: 'lazy' }) : null, el('span', { text: name }));
 
@@ -90,7 +93,7 @@ function buildTable({ cols, rows, sort, onSort, onRow, empty }) {
   return el('table', {}, el('thead', {}, head), el('tbody', {}, ...body));
 }
 
-const SORTERS = { k: (r) => r.k, d: (r) => r.d, kd, kpm: (r) => r.kpm, members: (r) => r.members, perMember: (r) => r.k / r.members };
+const SORTERS = { k: (r) => r.k, d: (r) => r.d, kd, kpm: (r) => r.kpm, pt: (r) => r.pt ?? -1, members: (r) => r.members, perMember: (r) => r.k / r.members };
 function sorted(rows, sort) {
   const get = SORTERS[sort.key] || SORTERS.k;
   return [...rows].sort((a, b) => (get(b) - get(a)) * -sort.dir);
@@ -104,7 +107,7 @@ const who = (p) => el('span', { class: 'who' }, emblem(p.faction), p.online ? el
   el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null);
 const outfitCell = (o) => el('span', { class: 'who' }, emblem(o.faction), el('span', { class: `c${o.faction}`, text: o.tag ? `[${o.tag}] ${o.name}` : o.name }));
 
-/* ---------- live tab: three empire columns ---------- */
+/* ---------- live tab: empire and NSO boards ---------- */
 function miniPlayers(list) {
   return buildTable({
     cols: [
@@ -122,10 +125,10 @@ function miniPlayers(list) {
 }
 function renderLive(s = view.data) {
   const total = s.factions.reduce((a, f) => a + f.k, 0);
-  $('empires').replaceChildren(...[1, 2, 3].map((f) => {
-    const tot = s.factions.find((x) => x.f === f);
+  $('empires').replaceChildren(...[1, 2, 3, 4].map((f) => {
+    const tot = s.factions.find((x) => x.f === f) || { f, k: 0, d: 0 };
     const share = total ? ((tot.k / total) * 100).toFixed(1) : '0.0';
-    const top = s.byFaction[f].players.slice(0, 10);
+    const top = (s.byFaction[f]?.players || []).slice(0, 10);
     return el('section', { class: `empire f${f}`, 'aria-label': EMPIRE[f] },
       el('header', { class: 'ehead' }, emblem(f, 30), el('h2', { text: EMPIRE[f] }), el('span', { class: 'share', text: `${share}%` })),
       el('h3', { text: 'Top players' }),
@@ -134,7 +137,7 @@ function renderLive(s = view.data) {
   }));
   const bar = el('div', { class: 'fbar' });
   for (const f of s.factions) {
-    const pct = total ? (f.k / total) * 100 : 33.3;
+    const pct = total ? (f.k / total) * 100 : 100 / s.factions.length;
     const seg = el('div', { class: `f${f.f}`, text: total ? `${Math.round(pct)}%` : '' });
     seg.style.flexGrow = String(Math.max(pct, 0.5));
     bar.append(seg);
@@ -146,7 +149,7 @@ function renderLive(s = view.data) {
 
 /* ---------- players tab and the outfit viewer ---------- */
 function chips(container, state, rerender) {
-  const items = [[0, 'All empires'], [1, 'VS'], [2, 'NC'], [3, 'TR']];
+  const items = [[0, 'All empires'], [1, 'VS'], [2, 'NC'], [3, 'TR'], [4, 'NSO']];
   container.replaceChildren(...items.map(([f, label]) => {
     const b = el('button', { type: 'button', class: `chip${f ? ` f${f}` : ''}`, text: label, 'aria-pressed': String(state.empire === f) });
     b.addEventListener('click', () => { state.empire = f; rerender(); });
@@ -158,7 +161,7 @@ function renderPlayers() {
   const st = view.players;
   chips($('players-chips'), st, renderPlayers);
   const q = st.q.toLowerCase();
-  const base = st.empire ? s.byFaction[st.empire].players : s.players;
+  const base = st.empire ? s.byFaction[st.empire]?.players || [] : s.players;
   const rows = sorted(base.filter((p) => !q || p.name.toLowerCase().includes(q) || p.tag.toLowerCase().includes(q) || p.outfit.toLowerCase().includes(q)), st.sort);
   $('players-table').replaceChildren(buildTable({
     cols: [
@@ -168,6 +171,7 @@ function renderPlayers() {
       { label: 'Deaths', n: true, sort: 'd', cell: (p) => num(p.d) },
       { label: 'K/D', n: true, sort: 'kd', cell: kdText },
       { label: 'KPM', n: true, sort: 'kpm', cell: (p) => p.kpm.toFixed(2) },
+      { label: 'Playtime', n: true, sort: 'pt', cell: playtime },
       { label: 'Top weapon', cell: (p) => weaponCell(p.weapon, p.weaponImg) },
     ],
     rows, sort: st.sort, onSort: (k) => toggleSort(st, k, renderPlayers), onRow: (p) => openPlayer(p.id),
@@ -179,7 +183,7 @@ function renderOutfits() {
   const st = view.outfits;
   chips($('outfits-chips'), st, renderOutfits);
   const q = st.q.toLowerCase();
-  const base = st.empire ? s.byFaction[st.empire].outfits : s.outfits;
+  const base = st.empire ? s.byFaction[st.empire]?.outfits || [] : s.outfits;
   const rows = sorted(base.filter((o) => !q || o.name.toLowerCase().includes(q) || o.tag.toLowerCase().includes(q)), st.sort);
   $('outfits-table').replaceChildren(buildTable({
     cols: [
@@ -273,7 +277,7 @@ async function openSpawn(p) {
 /* ---------- population chart ---------- */
 const LINES = [['vs', 1], ['nc', 2], ['tr', 3], ['ns', 4]];
 const RANGES = { '2h': 'last 2 hours', '6h': 'last 6 hours', '24h': 'last 24 hours', '7d': 'last 7 days' };
-const sumOf = (p) => p.vs + p.nc + p.tr + p.ns;
+const sumOf = (p) => p.total ?? (p.vs + p.nc + p.tr + p.ns);
 // Clock times are shown on a 12-hour clock everywhere, whatever the viewer's locale defaults to.
 const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 const dayHour = (t) => `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${hhmm(t)}`;
@@ -293,6 +297,7 @@ function svgEl(tag, props) {
 }
 /** The live counts, as buttons: each one opens the list of who is online. */
 function popLegend(sample) {
+  $('t-players').textContent = num(sumOf(sample));
   const chip = (empire, label, value, cls) => {
     const b = el('button', { type: 'button', class: `popchip ${cls}`, title: empire ? `Who is online on ${EMPIRE[empire] || 'Nanite Systems'}` : 'Who is online' },
       el('i', {}), el('b', { text: num(value) }), el('span', { text: label }));
@@ -425,7 +430,10 @@ function drawChart(target, buckets) {
 function renderSummary(s) {
   $('server-line').textContent = `${s.server} · last ${view.win.toUpperCase()}`;
   $('t-kills').textContent = num(s.factions.reduce((a, f) => a + f.k, 0));
-  $('t-players').textContent = num(s.activePlayers);
+  // The chart's live sample is independent of the leaderboard window. Older APIs do not expose
+  // onlinePlayers: never fall back to their historical activePlayers field.
+  $('t-players').textContent = s.onlinePlayers == null ? '–' : num(s.onlinePlayers);
+  if (view.pop?.length) $('t-players').textContent = num(sumOf(view.pop.at(-1)));
   const live = s.stream === 'connected' && s.feedOnline !== false;
   $('status').className = `pill ${live ? 'live' : 'down'}`;
   $('status').lastElementChild.textContent = live ? 'Live' : s.stream === 'connected' ? 'Daybreak feed offline' : 'Reconnecting';

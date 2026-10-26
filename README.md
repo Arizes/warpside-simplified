@@ -96,8 +96,13 @@ API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=
   `state.online` is the set of characters currently logged in, anyone seen in a kill event is added to it
   (their login may predate the tracker), and the collector records one sample per world per minute into
   `state.pop`. A session running more than 18 hours is treated as a logout that was missed and swept out.
-  Characters already online when the tracker started are not counted until their next login, so the count can
-  read low, never high, and the page says so.
+  The headline **Players online**, chart live total and roster count current sessions on the selected
+  server, including noncombatants and characters whose faction lookup is pending. They do not depend on
+  the leaderboard window. `/api/stats` exposes this as `onlinePlayers` (and `activePlayers` for compatibility);
+  `windowPlayers` counts distinct killers in the selected window. The last population point includes `total`
+  so unknown factions are included in its live total. Characters already connected can be missing until
+  observed; missed logouts can leave stale sessions. This is an observed session count, not an authoritative
+  full-server census, and exact agreement with another tracker is not guaranteed.
 - **Samples outlive the event log.** A sample is six numbers a minute per world, so a week of them costs far
   less than an hour of events: `state.pop` is kept for 7 days while the log stays at `RETAIN_HOURS`. That is
   what lets the chart zoom out past the board's own window. The chart defaults to the last 2 hours and offers
@@ -152,7 +157,7 @@ are used. Base-spawn counts, base coordinates, deployment timestamps and actual 
 those values are not estimated. Explicit "View continent map" links open the whole recorded continent;
 rows do not imply an exact spawn/base location is known.
 
-The table shows first observed spawn, time since that first observation ("Observed lifespan"),
+The table shows first observed spawn, time since that first observatwion ("Observed lifespan"),
 and time since the last spawn. Those counters advance locally once a second from the API's clock, with
 no extra requests, and do not assert that the object is still deployed or alive. Like Honu's calculation,
 the observed lifespan includes idle time while an entry remains on the board.
