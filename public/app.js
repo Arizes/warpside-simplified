@@ -1,6 +1,7 @@
 // Dashboard client. Every string from the API (character names, outfits) is untrusted,
 // so nodes are built with textContent only: no innerHTML anywhere.
 import { apiBase } from './api-base.js';
+import { brLabel } from './br.js';
 import { createMap } from './map.js';
 import { spawnDuration, spawnNow } from './spawn-time.js';
 
@@ -103,8 +104,12 @@ function toggleSort(state, key, rerender) {
   rerender();
 }
 
+const brBadge = (p) => {
+  const label = brLabel(p);
+  return label ? el('span', { class: 'br', title: 'Battle rank', text: label }) : null;
+};
 const who = (p) => el('span', { class: 'who' }, emblem(p.faction), p.online ? el('span', { class: 'on', title: 'Online' }) : null,
-  el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null);
+  el('span', { class: `c${p.faction}`, text: p.name }), brBadge(p), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null);
 const outfitCell = (o) => el('span', { class: 'who' }, emblem(o.faction), el('span', { class: `c${o.faction}`, text: o.tag ? `[${o.tag}] ${o.name}` : o.name }));
 
 /* ---------- live tab: empire and NSO boards ---------- */
@@ -112,7 +117,7 @@ function miniPlayers(list) {
   return buildTable({
     cols: [
       { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
-      { label: 'Player', cell: (p) => el('span', { class: 'who' }, p.online ? el('span', { class: 'on', title: 'Online' }) : null, el('span', { class: `c${p.faction}`, text: p.name }), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null) },
+      { label: 'Player', cell: (p) => el('span', { class: 'who' }, p.online ? el('span', { class: 'on', title: 'Online' }) : null, el('span', { class: `c${p.faction}`, text: p.name }), brBadge(p), p.tag ? el('span', { class: 'tag', text: `[${p.tag}]` }) : null) },
       { label: 'Kills', n: true, cell: (p) => num(p.k) },
       { label: 'KPM', n: true, cell: (p) => p.kpm.toFixed(2) },
       { label: 'Deaths', n: true, cell: (p) => num(p.d) },
@@ -503,6 +508,7 @@ async function openPlayer(id) {
     $('p-outfit').textContent = p.outfit ? `${p.tag ? `[${p.tag}] ` : ''}${p.outfit}` : 'No outfit';
     $('p-name').textContent = p.name;
     $('p-name').className = `c${p.faction}`;
+    $('p-br').textContent = brLabel(p);
     const tile = (k, l) => el('div', { class: 'tile' }, el('dd', { text: k }), el('dt', { text: l }));
     $('p-tiles').replaceChildren(tile(num(p.k), 'Kills'), tile(num(p.d), 'Deaths'), tile(kdText(p), 'K/D'), tile(p.br ? `BR ${p.br}` : '–', p.asp ? `ASP ${p.asp}` : 'Rank'));
     drawChart($('p-chart'), p.hourly);
@@ -522,7 +528,6 @@ async function openOnline(empire) {
         { label: '#', cls: 'rank', cell: (_, i) => String(i + 1) },
         { label: 'Player', cell: who },
         { label: 'Outfit', cell: (p) => el('span', { text: p.outfit ? `${p.tag ? `[${p.tag}] ` : ''}${p.outfit}` : '–' }) },
-        { label: 'BR', n: true, cell: (p) => (p.br ? `${p.br}${p.asp ? `~${p.asp}` : ''}` : '–') },
         { label: 'Seen online', n: true, cell: (p) => clock(r.now - p.since) },
       ],
       rows: r.players.map((p) => ({ ...p, online: true })),
