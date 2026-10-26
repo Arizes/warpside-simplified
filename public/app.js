@@ -317,7 +317,7 @@ function drawPopulation(target = $('chart'), series = view.pop) {
     return;
   }
   popLegend(series.at(-1));
-  const W = Math.max(320, Math.round(target.clientWidth) || 720);
+  const W = Math.max(1, Math.round(target.clientWidth) || 720);
   const H = 190, padL = 36, padR = 6, padT = 10, padB = 20;
   const top = niceTop(Math.max(...series.flatMap((p) => LINES.map(([k]) => p[k]))));
   const x = (i) => padL + ((W - padL - padR) * i) / Math.max(1, series.length - 1);
@@ -332,7 +332,7 @@ function drawPopulation(target = $('chart'), series = view.pop) {
     svg.append(label);
   }
   const at = series.at(-1).t - series[0].t > 36 * 3600e3 ? dayHour : hhmm;
-  const stride = Math.ceil(series.length / 6);
+  const stride = Math.ceil(series.length / Math.max(2, Math.floor((W - padL - padR) / 100)));
   series.forEach((p, i) => {
     if (i % stride || i > series.length - stride / 2) return;
     // The first label would hang off the left edge if it were centred on its point.
