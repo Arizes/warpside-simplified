@@ -1,170 +1,118 @@
-# Warpside Simplified
+# Warpside
 
-Live PlanetSide 2 leaderboards for the PS4 servers **Genudine** (US) and **Ceres** (EU): top players and outfits
-by empire, a live player count per empire over a rolling 24-hour window, and a live continent map with territory, base captures
-and estimated fights.
+Live PlanetSide 2 stats for the PS4 servers **Genudine** (US) and **Ceres** (EU):
 
-Today it runs entirely on Cloudflare's free tier: one Worker serves the page and the API, and one Durable
-Object collects the kill stream and keeps the last 24 hours. No database, no server to maintain, no runtime
-dependencies.
+- top players and outfits by empire, over the last 1, 6 or 24 hours
+- players online per empire, charted over up to 7 days
+- a live continent map with territory, base captures and estimated fights
+- the busiest Sunderer and Router spawn points right now
 
-> **Move in progress (decided 2026-10-25):** the backend API, event listener, background jobs and a
-> PostgreSQL database move to **Railway** (Hobby), packaged with Docker so the provider can be changed;
-> **Cloudflare** keeps the frontend, DNS, caching and security. Plan and phases:
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
->
-> **Phase 1 is done:** the collector also runs as a plain Node process (`npm start`, or `docker compose up`)
-> with no Cloudflare runtime, serving the same API. Both runtimes share `src/collector.js`, so there is one
-> implementation. Phase 2 adds PostgreSQL; the Worker is retired in phase 4.
+Data comes from Daybreak's public [Census API](https://census.daybreakgames.com/) and event stream. There is
+no database and no runtime dependency: one collector keeps the last 24 hours in memory and serves a small
+JSON API to a plain HTML/JS front end.
 
-> The earlier, much larger Postgres-based design is archived at
-> [Arizes/warpside](https://github.com/Arizes/warpside). This project started from
-> [Arizes/ps2-stats-tracker](https://github.com/Arizes/ps2-stats-tracker).
+## Quick start
 
-## Run it locally
-
-Requires Node 22+.
+Requires Node 22+ and a free Census service ID ([sign up here](https://census.daybreakgames.com/#devSignup)).
 
 ```sh
 npm install
-npm run assets                   # map tiles and sounds (about 120 MB, not in git); dev and deploy also run it
-cp .dev.vars.example .dev.vars   # add your CENSUS_SERVICE_ID (free: https://census.daybreakgames.com/#devSignup)
-npm run dev                      # Worker + Durable Object, http://localhost:8787
+npm run assets          # downloads map tiles and sounds (~120 MB, not in git)
+cp .env.example .env    # set CENSUS_SERVICE_ID
+npm run dev:node        # http://localhost:8080, reloads on change
 npm test
 ```
 
-Or run the Node backend, which is what Railway will run:
+Leaderboards start empty and fill as kills arrive.
 
-```sh
-cp .env.example .env             # same CENSUS_SERVICE_ID
-npm start                        # http://localhost:8080  (npm run dev:node to reload on change)
-docker compose up --build        # the same image Railway builds, plus Postgres for phase 2
-```
+The collector can run in two ways, sharing the same code (`src/collector.js`):
 
-Leaderboards start empty and fill as kills arrive; the 24-hour history builds up the longer it runs.
+| Runtime | Command | Config file |
+|---|---|---|
+| Node / Docker | `npm start` or `docker compose up --build` | `.env` |
+| Cloudflare Worker + Durable Object | `npm run dev` (via Wrangler) | `.dev.vars` |
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CENSUS_SERVICE_ID` | `example` | Your Census service ID. `example` is limited to 10 requests/min. Keep it secret. |
+| `PORT` | `8080` | HTTP port (Node) |
+| `DATA_DIR` | `./data` | Where snapshots are written (Node) |
+| `RETAIN_HOURS` | `24` | How much kill history to keep |
 
 ## How it works
 
 ```
-Daybreak event stream ──outbound WebSocket──▶ Tracker (one Durable Object)
-   (Death, login, logout)                       ├─ parses events (src/stream.js)
-Census REST ◀── batched name/weapon lookups ────┤─ keeps the rolling event log in memory
-                                                ├─ snapshots it to its own storage every ~60 s
-Browser ──▶ Worker ──▶ /api/* ──────────────────┴─ computes leaderboards on request (src/stats.js)
-   └──▶ static page (public/, served by Cloudflare, free and unmetered)
+Daybreak event stream ──WebSocket──▶ collector
+  (deaths, logins, captures)           ├─ parses events            src/stream.js, src/ingest.js
+Census REST ◀── batched lookups ───────┤─ keeps a rolling log      src/store.js
+  (names, weapons, outfits)            ├─ snapshots it every ~60 s
+                                       └─ answers /api/*           src/api.js, src/stats.js
+Browser ──▶ public/ (static page) ──▶ /api/*
 ```
 
-| File | Job |
+| Path | What it does |
 |---|---|
-| `src/collector.js` | The collector, runtime-neutral: connections, event log, map, API, watchdog tick |
-| `src/worker.js` | Cloudflare entry point: routes `/api/*` and `/health` to the Tracker, cron safety net |
-| `src/tracker.js` | Cloudflare wrapper: Durable Object storage, WebSocket over fetch, keep-alive alarm |
-| `src/server.js` | Node entry point: HTTP server, static files, graceful shutdown (what Railway runs) |
-| `src/node-store.js` | Snapshot, map and geometry as files in `DATA_DIR` (replaced by Postgres in phase 2) |
-| `src/stream.js` | Stream URL, subscription message and message parsing |
-| `src/ingest.js` | Applies a parsed record to the state |
-| `src/census.js` | Batched, cached, backed-off Census lookups |
-| `src/store.js` | Event log, pruning, compressed chunked snapshots |
-| `src/stats.js` | Leaderboards, outfits, faction split, player count per empire, player detail |
-| `src/map.js` | Map state: ownership, base presence, fight detection, captures |
-| `src/spawns.js` | Bounded spawn NPC counters and the five-minute activity ranking |
-| `public/map.js` | The map view: tiles, hex territories, influence cloud, lattice, battle bubbles, region card, zoom sounds |
-| `public/map-logic.js` | Pure map helpers (cut-off territory, bubble rate, base labels), unit tested |
-| `scripts/fetch-map-assets.mjs` | Downloads map tiles and sounds from ps2alerts/assets at a pinned commit |
-| `src/api.js` | Routes, validation, short response memo |
-| `src/config.js` | Server list (add a world here), windows, env |
-| `public/` | The dashboard (plain HTML, CSS, ES modules) and `_headers` (CSP) |
+| `src/collector.js` | Core logic, independent of runtime |
+| `src/server.js`, `src/node-store.js` | Node entry point and file-based snapshots |
+| `src/worker.js`, `src/tracker.js` | Cloudflare entry point and Durable Object wrapper |
+| `src/stream.js`, `src/ingest.js` | Event-stream subscription, parsing and applying events |
+| `src/census.js` | Batched, cached Census lookups with backoff |
+| `src/store.js` | Event log, pruning, compressed snapshots |
+| `src/stats.js` | Leaderboards, outfits, faction split, population, player detail |
+| `src/map.js` | Territory, captures, fight detection |
+| `src/spawns.js` | Spawn-point ranking |
+| `src/config.js` | Tracked servers and time windows |
+| `public/` | The front end (plain HTML, CSS, ES modules) |
+| `scripts/fetch-map-assets.mjs` | Downloads map assets |
 
-API (all `GET`): `/api/stats?world=1000&window=24h`, `/api/player?world=1000&id=<characterId>&window=24h`,
-`/api/population?world=1000&range=2h`, `/api/online?world=1000&empire=1`, `/api/map?world=1000[&zone=2]`,
-`/api/map-static?world=1000&zone=2`, `/api/servers`, `/health`. Windows are `1h`, `6h`, `24h`; chart ranges are
-`2h`, `6h`, `24h`, `7d`; `empire` is `0` for everyone, or `1` VS, `2` NC, `3` TR, `4` NSO.
+### API
 
-### Design decisions
+All endpoints are `GET` and return JSON.
 
-- **One collector, two runtimes.** `src/collector.js` holds all the behaviour and is given a store, a way
-  to open a socket and a `waitUntil`; `tracker.js` supplies the Cloudflare versions and `server.js` the Node
-  ones. There is no second implementation to keep in step during the migration.
-- **One Durable Object, no database.** 24 hours of PS4 kills is small. The object holds it in memory and
-  writes a gzipped snapshot in chunks to its own storage, so a restart loses about a minute. D1, KV, R2 and
-  Queues are deliberately not used.
-- **One object for both servers.** Free-plan duration is 13,000 GB-s per day; one always-on object uses about
-  11,000. A second object would exceed it.
-- **History is a rolling window**, not an archive.
-- **The live board charts the player count, not kills per hour.** Kill rate is already in the boards and the
-  KPM column. The population comes from the `PlayerLogin` and `PlayerLogout` events Daybreak publishes:
-  `state.online` is the set of characters currently logged in, anyone seen in a kill event is added to it
-  (their login may predate the tracker), and the collector records one sample per world per minute into
-  `state.pop`. A session running more than 18 hours is treated as a logout that was missed and swept out.
-  The headline **Players online**, chart live total and roster count current sessions on the selected
-  server, including noncombatants and characters whose faction lookup is pending. They do not depend on
-  the leaderboard window. `/api/stats` exposes this as `onlinePlayers` (and `activePlayers` for compatibility);
-  `windowPlayers` counts distinct killers in the selected window. The last population point includes `total`
-  so unknown factions are included in its live total. Characters already connected can be missing until
-  observed; missed logouts can leave stale sessions. This is an observed session count, not an authoritative
-  full-server census, and exact agreement with another tracker is not guaranteed.
-- **Samples outlive the event log.** A sample is six numbers a minute per world, so a week of them costs far
-  less than an hour of events: `state.pop` is kept for 7 days while the log stays at `RETAIN_HOURS`. That is
-  what lets the chart zoom out past the board's own window. The chart defaults to the last 2 hours and offers
-  6h, 24h and 7d; longer ranges are averaged into at most 180 points. Clicking an empire in the legend lists
-  who the tracker has seen online there.
-- **Servers are configuration** in `src/config.js`.
-- **Untrusted data stays at the edges.** Stream frames are parsed defensively, Census IDs are validated as
-  digit strings before they enter a query, API parameters are allow-listed, the browser builds DOM with
-  `textContent` only, and a strict CSP is set on every page.
-- **Images load directly from Census** in the visitor's browser (faction emblems and weapon icons), so they
-  cost the site no requests.
-- **The map** draws Census hex geometry over the official terrain tiles from
-  [ps2alerts/assets](https://github.com/ps2alerts/assets) (MIT; used with the developers' permission, per the
-  owner). Ownership is polled every 2 minutes and updated live from `FacilityControl`. Fights are estimated:
-  kills only carry a continent, so they are placed at bases where a participant was seen capturing or
-  defending in the last 15 minutes.
-- **Map details:** styled after the in-game map, with filters named like the in-game panel (terrain, facilities,
-  facility connections, territory control, hotspots, influence cloud, grid, plus region borders, names and players
-  seen). Territory and lattice use PS2Alerts' map colours and opacities (tints at 40% opacity) over untouched terrain, so
-  roads, buildings and relief stay readable at every zoom; thin black region borders, the lattice and icons carry the
-  contrast. The **influence cloud** is the territory blurred into a small bitmap once per ownership change and glows
-  only outside the playable hexes, so it never tints the terrain. **Battle bubbles** are short orange puffs on a canvas over the map: a fight's puff rate follows the
-  server's measured heat at that base, but individual puffs are not individual kills and their spread around the base
-  is decorative. **Cut-off** territory (not linked to its empire's warpgate through its own lattice, computed from
-  ownership and `facility_link`) is dimmed. While zooming or panning, the heavy layer (terrain, territory, grid, cloud)
-  is only moved by a GPU transform and redrawn once the view settles, as Leaflet does on PS2Alerts; the lattice,
-  icons and names sit in a light overlay that follows every frame. A drag glides to a stop; arrow keys pan and +/- zoom. Base icons are original glyphs, not game art (rule 10).
-  Hex geometry is adapted from Honu (MIT,
-  `src/map/LedgerModels.ts`). Clicking a region shows its owner, the outfit that captured it (only for flips seen
-  since tracking started), combat in the last 10 minutes and recent captures. Player counts are distinct characters
-  seen in events at that base, shown as a floor ("8+ seen"). Daybreak does not publish per-base populations and
-  players who are only present never appear in its data, so these are never presented as the in-game figures.
+| Endpoint | Parameters |
+|---|---|
+| `/api/stats` | `world`, `window` (`1h`, `6h`, `24h`) |
+| `/api/player` | `world`, `id` (character ID), `window` |
+| `/api/population` | `world`, `range` (`2h`, `6h`, `24h`, `7d`) |
+| `/api/online` | `world`, `empire` (`0` all, `1` VS, `2` NC, `3` TR, `4` NSO) |
+| `/api/map` | `world`, optional `zone` |
+| `/api/map-static` | `world`, `zone` |
+| `/api/servers` | none |
+| `/health` | none |
 
-Target architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Limits, risks and deployment:
-[`docs/DEPLOY.md`](docs/DEPLOY.md). Census API notes:
-[`docs/research/census-api.md`](docs/research/census-api.md).
+`world` is `1000` (Genudine) or `2000` (Ceres).
 
-## Hottest Spawn Points
+### Design notes
 
-The Live page ranks up to 25 Sunderer and Router NPCs by observed spawn bonuses in the last five minutes.
-It updates with the existing 30-second stats poll, independently of the kill leaderboard's time window.
-Totals cover the observed active session; five minutes without a spawn expires the entry. Spawns/minute
-is the recent five-minute count divided by five, including when observation started less than five minutes ago.
-Only filtered ESS experience IDs 233 and 1410 are subscribed, on the existing two connections. Sparse
-per-second counters expire after five minutes, at most 512 NPCs are held across both servers, and the
-existing state snapshot persists them. There is no new runtime dependency, raw XP log or per-viewer Census request.
+- **Rolling window, not an archive.** Kills older than `RETAIN_HOURS` are dropped. Population samples are
+  tiny, so they're kept for 7 days.
+- **Servers are configuration.** Add a world to `SERVERS` in `src/config.js`; there's no per-server code.
+- **Untrusted input stays at the edges.** Stream frames and Census responses are parsed defensively, IDs are
+  validated before they reach a query, API parameters are allow-listed, the browser builds DOM with
+  `textContent` only, and a strict CSP is applied.
+- **Counts are observed, not official.** Online players and per-base counts are derived from events Daybreak
+  publishes, so they're a close estimate rather than the in-game figure. Fight locations on the map are
+  inferred from recent captures and defences.
 
-Names/tags identify the credited owner's current Census outfit, refreshed in the existing lookup batches
-at most once per five minutes per active owner. They do not assert outfit ownership at deployment. No
-verified official outfit-decal mapping exists in the PS4 data, so the existing Census faction emblems
-are used. Base-spawn counts, base coordinates, deployment timestamps and actual lifespans are unavailable;
-those values are not estimated. Explicit "View continent map" links open the whole recorded continent;
-rows do not imply an exact spawn/base location is known.
+More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DEPLOY.md`](docs/DEPLOY.md),
+[`docs/research/census-api.md`](docs/research/census-api.md), [`docs/research/spawns.md`](docs/research/spawns.md).
 
-The table shows first observed spawn, time since that first observatwion ("Observed lifespan"),
-and time since the last spawn. Those counters advance locally once a second from the API's clock, with
-no extra requests, and do not assert that the object is still deployed or alive. Like Honu's calculation,
-the observed lifespan includes idle time while an entry remains on the board.
-Research, live PS4
-verification and Honu source references: [`docs/research/spawns.md`](docs/research/spawns.md).
+## Contributing
+
+Issues and pull requests are welcome. Please run `npm test` before opening a PR; tests never call the real
+Census API or stream.
 
 ## Credits
 
-Data from the Daybreak Census API. MIT licence. Asset credits and licences ship in `public/maps/NOTICE.txt`.
-The site is branded Warpside; `warpside2.com` is its domain. The site has no disclaimer footer.
+- Data from the Daybreak Census API. Warpside is a fan project and is not affiliated with Daybreak Games.
+- Map tiles and sounds from [ps2alerts/assets](https://github.com/ps2alerts/assets) (MIT).
+- Hex geometry adapted from [Honu](https://github.com/varunda/honu) (MIT).
+- Started from [ps2-stats-tracker](https://github.com/Arizes/ps2-stats-tracker).
+
+Asset credits and licences ship in `public/maps/NOTICE.txt`.
+
+## Licence
+
+[MIT](LICENSE)
