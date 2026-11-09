@@ -109,7 +109,6 @@ Census API or stream.
 - Data from the Daybreak Census API. Warpside is a fan project and is not affiliated with Daybreak Games.
 - Map tiles and sounds from [ps2alerts/assets](https://github.com/ps2alerts/assets) (MIT).
 - Hex geometry adapted from [Honu](https://github.com/varunda/honu) (MIT).
-- Started from [ps2-stats-tracker](https://github.com/Arizes/ps2-stats-tracker).
 
 Asset credits and licences ship in `public/maps/NOTICE.txt`.
 
