@@ -71,6 +71,7 @@ td, .tile dd, .totals, .flegend { font-variant-numeric: tabular-nums; }
 .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); background: rgba(52, 211, 245, 0.06); }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .seg { display: flex; border: 1px solid var(--line); background: var(--panel); }
+.seg[hidden] { display: none; } /* display: flex would otherwise override the attribute */
 .seg button {
   all: unset; box-sizing: border-box; cursor: pointer; padding: 5px 14px; font-size: 15px; font-weight: 600;
   color: var(--muted); transition: color 0.15s, background-color 0.15s;
