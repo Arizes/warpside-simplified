@@ -38,6 +38,24 @@ test('heartbeat and state-change messages report feed health per world', () => {
   assert.deepEqual(sc.feeds, { 1000: true });
 });
 
+test('PC endpoint names put the world name first and still map to world ids', () => {
+  // recorded from the ps2 environment on 2026-11-24
+  const hb = parseMessage({ type: 'heartbeat', online: {
+    EventServerEndpoint_Jaeger_19: 'true', EventServerEndpoint_Osprey_1: 'true', EventServerEndpoint_Soltech_40: 'false', EventServerEndpoint_Wainwright_10: 'true',
+  } }, SERVERS);
+  assert.deepEqual(hb.feeds, { 1: true, 10: true, 40: false });
+  const sc = parseMessage({ type: 'serviceStateChanged', detail: 'EventServerEndpoint_Soltech_40', online: 'true' }, SERVERS);
+  assert.deepEqual(sc.feeds, { 40: true });
+});
+
+test('every PC world shares one stream connection and one Census namespace', () => {
+  const pc = Object.entries(SERVERS).filter(([, s]) => s.platform === 'pc');
+  assert.deepEqual(pc.map(([id]) => Number(id)).sort((a, b) => a - b), [1, 10, 40]);
+  for (const [, s] of pc) assert.deepEqual([s.env, s.ns], ['ps2', 'ps2:v2']);
+  const death = { event_name: 'Death', world_id: '1', timestamp: '1700000000', zone_id: '2', attacker_character_id: '5428010618015189713', character_id: '5428010618015189714' };
+  assert.equal(parseMessage({ type: 'serviceMessage', payload: death }, SERVERS).event[1], 1);
+});
+
 test('unknown or malformed messages return null', () => {
   assert.equal(parseMessage({ type: 'connectionStateChanged' }, SERVERS), null);
   assert.equal(parseMessage({ type: 'serviceMessage' }, SERVERS), null);

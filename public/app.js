@@ -3,6 +3,7 @@
 import { apiBase } from './api-base.js';
 import { brLabel } from './br.js';
 import { createMap } from './map.js';
+import { normaliseServers, platformsOf, worldForPlatform } from './servers.js';
 import { spawnDuration, spawnNow } from './spawn-time.js';
 
 const $ = (id) => document.getElementById(id);
@@ -547,15 +548,61 @@ function segment(container, current, onPick) {
   for (const b of buttons) b.addEventListener('click', () => { mark(b.dataset.v); onPick(b.dataset.v); });
 }
 
+// Line icons for the platform toggle, drawn as SVG nodes because the CSP forbids innerHTML.
+const PLATFORM_ICON = {
+  pc: ['M3 4.5h14v9H3z', 'M7.5 16.5h5M10 13.5v3'],
+  ps4: ['M6.5 7h7a3.5 3.5 0 0 1 3.4 4.3l-.8 3.3a1.6 1.6 0 0 1-2.7.7L11.6 13H8.4l-1.8 2.3a1.6 1.6 0 0 1-2.7-.7l-.8-3.3A3.5 3.5 0 0 1 6.5 7z', 'M6.5 9.5v2M5.5 10.5h2M13.5 10h.01M12.5 11.5h.01'],
+};
+function platformIcon(key) {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of PLATFORM_ICON[key] || []) {
+    const path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/** Selecting a server: the platform toggle filters the server buttons; each platform remembers its last pick. */
+function pickWorld(world) {
+  view.world = world;
+  safeSet('world', String(world));
+  view.pop = null;
+  load();
+  map?.worldChanged();
+}
+function renderWorlds(servers, platform, onPick) {
+  const list = servers.filter((s) => s.platform === platform);
+  $('world').setAttribute('aria-label', `${list[0]?.platformName || 'Server'} server`);
+  $('world').replaceChildren(...list.map((s) => el('button', { type: 'button', 'data-v': String(s.id), title: s.region, text: s.name })));
+  segment($('world'), view.world, (v) => {
+    safeSet(`world-${platform}`, v);
+    onPick(Number(v));
+  });
+}
+function setupServers(list) {
+  const servers = normaliseServers(list);
+  if (!servers.some((s) => s.id === view.world)) view.world = servers[0].id;
+  const platforms = platformsOf(servers);
+  const platformOf = (id) => servers.find((s) => s.id === id)?.platform;
+  $('platform').hidden = platforms.length < 2;
+  $('platform').replaceChildren(...platforms.map(([key, name]) => el('button', { type: 'button', 'data-v': key }, platformIcon(key), el('span', { text: name }))));
+  segment($('platform'), platformOf(view.world), (platform) => {
+    if (platformOf(view.world) === platform) return;
+    pickWorld(worldForPlatform(servers, platform, safeGet(`world-${platform}`)));
+    renderWorlds(servers, platform, pickWorld);
+  });
+  renderWorlds(servers, platformOf(view.world), pickWorld);
+}
+
 async function init() {
   document.body.classList.add('loading');
   try {
-    const servers = await api('/api/servers');
-    if (!servers.some((s) => s.id === view.world)) view.world = servers[0].id;
-    $('world').replaceChildren(...servers.map((s) => el('button', { type: 'button', 'data-v': String(s.id), title: s.region, text: s.name })));
+    setupServers(await api('/api/servers'));
   } catch { /* the stats call below reports the outage */ }
   map = createMap({ $, el, api, emblem, getWorld: () => view.world });
-  segment($('world'), view.world, (v) => { view.world = Number(v); safeSet('world', v); view.pop = null; load(); map.worldChanged(); });
   if (!['1h', '6h', '24h'].includes(view.win)) view.win = '24h';
   segment($('window'), view.win, (v) => { view.win = v; safeSet('window', v); load(); });
   if (!Object.hasOwn(RANGES, view.range)) view.range = '2h';

@@ -1,6 +1,6 @@
 # Warpside Simplified: project instructions
 
-Live PlanetSide 2 leaderboards (Genudine, Ceres) with a rolling 24-hour history. It currently runs on
+Live PlanetSide 2 leaderboards (PC: Osprey, Wainwright, SolTech; PlayStation: Genudine, Ceres) with a rolling 24-hour history. It currently runs on
 Cloudflare's free tier (one Worker plus one Durable Object). See `README.md` for how it works now and
 `docs/DEPLOY.md` for limits.
 

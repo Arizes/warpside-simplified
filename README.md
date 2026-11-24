@@ -1,6 +1,7 @@
 # Warpside
 
-Live PlanetSide 2 stats for the PS4 servers **Genudine** (US) and **Ceres** (EU):
+Live PlanetSide 2 stats for the PC servers **Osprey** (US), **Wainwright** (EU) and **SolTech** (Asia) and the
+PlayStation servers **Genudine** (US) and **Ceres** (EU), switched with a PC / PlayStation toggle:
 
 - top players and outfits by empire, over the last 1, 6 or 24 hours
 - players online per empire, charted over up to 7 days
@@ -82,13 +83,16 @@ All endpoints are `GET` and return JSON.
 | `/api/servers` | none |
 | `/health` | none |
 
-`world` is `1000` (Genudine) or `2000` (Ceres).
+`world` is `1` (Osprey), `10` (Wainwright), `40` (SolTech), `1000` (Genudine) or `2000` (Ceres). `/api/servers`
+lists each with its `platform` (`pc` or `ps4`).
 
 ### Design notes
 
 - **Rolling window, not an archive.** Kills older than `RETAIN_HOURS` are dropped. Population samples are
   tiny, so they're kept for 7 days.
 - **Servers are configuration.** Add a world to `SERVERS` in `src/config.js`; there's no per-server code.
+  Each entry carries a `platform`; all PC worlds share one stream connection (`environment=ps2`) and one
+  Census namespace (`ps2:v2`). PC is about ten times busier than PS4, see `docs/DEPLOY.md`.
 - **Untrusted input stays at the edges.** Stream frames and Census responses are parsed defensively, IDs are
   validated before they reach a query, API parameters are allow-listed, the browser builds DOM with
   `textContent` only, and a strict CSP is applied.

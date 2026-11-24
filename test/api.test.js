@@ -46,7 +46,7 @@ test('all live endpoints agree on online sessions regardless of leaderboard wind
 
 test('unknown world or window is a 400, never a crash', async () => {
   const { api } = setup();
-  for (const q of ['world=1', 'world=abc', 'window=999d', 'world=1000&window=__proto__']) {
+  for (const q of ['world=17', 'world=abc', 'window=999d', 'world=1000&window=__proto__']) {
     assert.equal((await get(api, `/api/stats?${q}`)).status, 400, q);
   }
 });
@@ -143,6 +143,17 @@ test('map endpoints validate the zone, cache geometry for a day and ask for unkn
   assert.equal((await get(api, '/api/map-static?world=1000&zone=4')).status, 503);
 });
 
+test('servers are listed with their platform so the page can group PC and PlayStation', async () => {
+  const { api } = setup();
+  const list = await (await get(api, '/api/servers')).json();
+  const byId = Object.fromEntries(list.map((s) => [s.id, s]));
+  assert.deepEqual([byId[1].name, byId[1].platform, byId[1].platformName], ['Osprey', 'pc', 'PC']);
+  assert.deepEqual([byId[10].name, byId[10].platform], ['Wainwright', 'pc']);
+  assert.deepEqual([byId[1000].platform, byId[1000].platformName], ['ps4', 'PlayStation']);
+  assert.equal((await get(api, '/api/stats?world=1&window=1h')).status, 200);
+  assert.equal(list.some((s) => 'env' in s || 'ns' in s), false); // stream and Census details stay server-side
+});
+
 test('live endpoints are edge-cacheable for seconds; health never is', async () => {
   const { api } = setup();
   const LIVE = 'public, max-age=0, s-maxage=15';
@@ -154,6 +165,6 @@ test('live endpoints are edge-cacheable for seconds; health never is', async () 
 
   // the platform health check must always reach the origin, and errors must not be cached
   assert.equal((await get(api, '/health')).headers.get('cache-control'), 'no-store');
-  assert.equal((await get(api, '/api/stats?world=1')).headers.get('cache-control'), 'no-store');
+  assert.equal((await get(api, '/api/stats?world=17')).headers.get('cache-control'), 'no-store');
   assert.equal((await get(api, '/api/player?world=1000&id=999')).headers.get('cache-control'), 'no-store');
 });

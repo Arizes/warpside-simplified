@@ -1,7 +1,7 @@
 {
   "name": "warpside-simplified",
   "version": "3.0.0",
-  "description": "Live PlanetSide 2 leaderboards for the PS4 servers, with a rolling 24-hour history",
+  "description": "Live PlanetSide 2 leaderboards for the PC and PlayStation servers, with a rolling 24-hour history",
   "private": true,
   "license": "MIT",
   "type": "module",

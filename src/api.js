@@ -1,4 +1,4 @@
-import { POP_RANGES, SERVERS, WINDOWS } from './config.js';
+import { PLATFORMS, POP_RANGES, SERVERS, WINDOWS } from './config.js';
 import { ZONES, busiestZone, computeMap, createMapState } from './map.js';
 import { computePlayer, computeStats, onlineRoster, populationSeries } from './stats.js';
 import { computeSpawns } from './spawns.js';
@@ -101,7 +101,7 @@ export function createApi({ state, config, status, feed, map = createMapState(),
       }
     }
     if (url.pathname === '/api/servers') {
-      return json(200, Object.entries(SERVERS).map(([id, s]) => ({ id: Number(id), name: s.name, region: s.region })), 'public, max-age=3600');
+      return json(200, Object.entries(SERVERS).map(([id, s]) => ({ id: Number(id), name: s.name, region: s.region, platform: s.platform, platformName: PLATFORMS[s.platform] })), 'public, max-age=3600');
     }
     if (url.pathname === '/health') return json(200, { ok: true, streams: status, feed, events: state.events.length });
     return json(404, { error: 'not found' });

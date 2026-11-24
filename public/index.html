@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Warpside · PlanetSide 2 live leaderboards</title>
-  <meta name="description" content="Live PlanetSide 2 leaderboards and continent map for Genudine and Ceres: top players and outfits by empire, live fights and base captures.">
+  <meta name="description" content="Live PlanetSide 2 leaderboards and continent map for PC (Osprey, Wainwright, SolTech) and PlayStation (Genudine, Ceres): top players and outfits by empire, live fights and base captures.">
   <meta name="theme-color" content="#070b12">
   <!-- Cloudflare serves this page, Railway serves the API. Ignored on localhost, where one process serves both. -->
   <meta name="api-base" content="https://api.warpside2.com">
@@ -30,6 +30,7 @@
       <button role="tab" id="tab-map" aria-controls="view-map" data-v="map">Map</button>
     </nav>
     <div class="controls">
+      <div class="seg platform" id="platform" role="group" aria-label="Platform"></div>
       <div class="seg" id="world" role="group" aria-label="Server"></div>
       <div class="seg" id="window" role="group" aria-label="Time window">
         <button type="button" data-v="1h">1H</button>
@@ -45,7 +46,7 @@
 
     <section class="summary" aria-label="Summary">
       <div>
-        <p class="eyebrow" id="server-line">PlanetSide 2 · PS4</p>
+        <p class="eyebrow" id="server-line">PlanetSide 2</p>
         <h1 id="view-title">Live leaderboard</h1>
       </div>
       <dl class="tiles">

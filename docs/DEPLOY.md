@@ -116,13 +116,21 @@ Optional: add a custom domain under Workers & Pages, Settings, Domains & Routes.
 
 Measured stream rate (Genudine, one 9-minute sample): about 14 deaths/min, plus logins and heartbeats.
 
+**PC servers do not fit this budget.** Osprey alone runs about 150 deaths/min at US prime time (measured
+2026-11-24), roughly ten times Genudine, so with PC enabled the 24-hour log grows to a few hundred thousand
+events. That is fine on Railway (expect a few hundred MB of memory and a larger `state.gz`), but it can pass
+the Durable Object's 128 MB memory limit, especially while the snapshot is serialised. The Worker is being
+retired (phase 4); if it must keep running meanwhile, deploy it from a branch whose `SERVERS` lists only the
+PS4 worlds.
+
 **Capacity:** the dashboard polls every 30 s, which is 120 Worker requests per viewer-hour, so the free plan
 supports roughly 800 viewer-hours per day. If you outgrow it, publish snapshots to a public R2 bucket so the
 CDN serves them, or move to the Workers Paid plan ($5/month).
 
 ### Risks and what to watch
 
-- **Duration is the tight limit.** If the quota is exhausted the collector stops until 00:00 UTC. Keep it to
+- **Memory is the tight limit with PC enabled** (see above). Watch Railway's memory graph after deploying.
+- **Duration is the tight limit** on the Worker. If the quota is exhausted the collector stops until 00:00 UTC. Keep it to
   one object; do not add a second always-on object to this account's free plan.
 - **Free limits can change.** Re-check the pricing pages before relying on this.
 - **Traffic spikes** can exhaust the 100,000 daily Worker requests; the API then returns errors until

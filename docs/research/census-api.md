@@ -18,6 +18,16 @@ response while locked, and Ceres Indar returned 70 of 89 regions as faction 0). 
 `zone_id`, `outfit_id`; `FacilityControl` needs a world-only subscription and carries `old_faction_id`,
 `new_faction_id`, `duration_held` (a defence arrives with old = new). `Death` carries `zone_id`, not a position.
 
+**Verified 2026-11-24 on `ps2` / `ps2:v2` (PC), 02:13 UTC:** `world` lists Osprey `1`, Wainwright `10`,
+Jaeger `19`, SolTech `40` online, plus Briggs `25` (online, but absent from the stream) and Apex `24` (locked).
+`map?world_id=1&zone_ids=2,4,6,8,344` returned all five continents (89/88/81/51/75 regions); `map_hex`,
+`character` with the `outfit_member_extended` join, and `loadout` have the same shape as the PS4
+namespaces, and the loadout-to-faction ids match `LOADOUT_FACTION` exactly. The `ps2` stream accepts the same
+three subscriptions; heartbeat keys put the **name before the id** (`EventServerEndpoint_Osprey_1`,
+`EventServerEndpoint_Soltech_40`), the reverse of `ps2ps4us`, and each state change names one endpoint. In a
+120 s sample: Osprey 302 `Death` and 162 spawn `GainExperience`, Wainwright 34 `Death` (European night),
+Jaeger and SolTech none; 610 frames, 210 KB, 295 distinct characters.
+
 Tags:
 
 - **[V-live]**: confirmed against the live API or its official documentation page.
@@ -48,9 +58,13 @@ Tags:
 |---|---|---|---|---|
 | Genudine | 1000 | `ps2ps4us:v2` | `ps2ps4us` | Only world in its namespace; 5,455,754 rows in `characters_world` |
 | Ceres | 2000 | `ps2ps4eu:v2` | `ps2ps4eu` | Only world in its namespace |
+| Osprey | 1 | `ps2:v2` | `ps2` | PC US; tracked |
+| Wainwright | 10 | `ps2:v2` | `ps2` | PC EU; tracked |
+| SolTech | 40 | `ps2:v2` | `ps2` | PC Asia; tracked |
+| Jaeger | 19 | `ps2:v2` | `ps2` | PC events server; not tracked (silent in the sample) |
 
-World 1000 is **not** present in `ps2:v2`; each namespace is a separate dataset. The ESS
-environment names are still **[V-lib]**.
+World 1000 is **not** present in `ps2:v2`; each namespace is a separate dataset. All three ESS
+environment names (`ps2`, `ps2ps4us`, `ps2ps4eu`) are now **[V-live]**.
 
 ### Collections verified on both PS4 namespaces **[V-live]**
 

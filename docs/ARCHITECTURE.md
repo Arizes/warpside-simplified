@@ -29,8 +29,9 @@ Census REST ◀── batched lookups ──────────────
 ## Principles
 
 - **Two Railway services only:** `app` and `postgres`. No Redis, queue, worker fleet, or separate cron
-  service. One Node process does API, listening and background jobs; that is enough for two PS4 servers
-  (about 14 deaths/min measured on Genudine).
+  service. One Node process does API, listening and background jobs; that is enough for the two PS4 servers
+  (about 14 deaths/min measured on Genudine) and the three PC servers (Osprey about 150 deaths/min at US
+  prime time, measured 2026-11-24).
 - **Exactly one replica of `app`.** Two listeners would ingest every event twice. Do not enable horizontal
   scaling; scale vertically if ever needed.
 - **Live views stay in memory.** Leaderboards, 1 h/6 h/24 h windows and the map are computed from the

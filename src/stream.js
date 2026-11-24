@@ -31,9 +31,10 @@ export function subscribeMessages(worlds) {
  * Pure: no I/O, so it is tested against recorded message shapes.
  */
 export function parseMessage(m, servers, nowMs = Date.now()) {
-  // Verified live on ps2ps4us: a state change names every endpoint in one string,
-  // e.g. "EventServerEndpoint_1000_Genudine_1001_Palos_1002_Crux", so collect all world ids.
-  const worldsOf = (key) => [...String(key).matchAll(/_(\d+)_[A-Za-z]+/g)].map((x) => Number(x[1])).filter((w) => servers[w]);
+  // Endpoint names differ by environment (verified live): ps2ps4us puts the id first and names several
+  // endpoints in one string ("EventServerEndpoint_1000_Genudine_1001_Palos"), ps2 puts the name first
+  // ("EventServerEndpoint_Osprey_1"). Every all-digit segment is a candidate world id either way.
+  const worldsOf = (key) => String(key).split('_').filter((t) => /^\d{1,6}$/.test(t)).map(Number).filter((w) => servers[w]);
   if (m.type === 'heartbeat' && m.online) {
     const feeds = {};
     for (const k of Object.keys(m.online)) for (const w of worldsOf(k)) feeds[w] = String(m.online[k]) === 'true';
